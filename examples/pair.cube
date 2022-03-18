@@ -1,0 +1,16 @@
+
+
+
+
+Goal: B
+———— Boundary ——————————————————————————————————————————————
+i = i0 ⊢ snd k
+i = i1 ⊢ snd l
+————————————————————————————————————————————————————————————
+i : I
+q : snd k ≡ snd l
+p : fst k ≡ fst l
+l : A × B
+k : A × B
+B : Set   (not in scope)
+A : Set   (not in scope)

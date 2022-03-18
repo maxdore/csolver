@@ -1,0 +1,49 @@
+name:                csolver
+version:             0.1.0.0
+github:              "maxdore/csolver"
+license:             BSD3
+author:              "Maximilian Dore"
+maintainer:          "maximilian.dore@cs.ox.ac.uk"
+copyright:           "2022 Maximilian Dore"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/csolver#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- mtl >= 2.2.2
+
+library:
+  source-dirs: src
+
+executables:
+  csolver-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - csolver
+
+tests:
+  csolver-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - csolver
