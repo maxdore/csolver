@@ -1,6 +1,3 @@
--- {-# LANGUAGE FlexibleInstances #-}
--- {-# LANGUAGE TypeSynonymInstances #-}
--- {-# LANGUAGE OverloadedStrings #-}
 module Lib
     ( someFunc
     ) where
@@ -9,13 +6,13 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Maybe
+import Data.List
 
 
 
 type Id = String
 
-data Dim = Var Int | And Dim Dim | Or Dim Dim
-  deriving (Eq)
+type Dim = [[Int]]
 
 data Term = Face Id | Abs Term | App Term Dim
 
@@ -27,20 +24,17 @@ type Tele   = [Decl]
 
 
 instance Eq Term where
-    Abs (App u (Var 1)) == v = u == v
-    Abs (Abs (App (App u (Var 2)) (Var 1))) == v = u == v
-    -- TODO ALSO QUOTIENT OUT \2.\1.sq<2><1> = sq
-    -- Abs (Abs (App (App t (Var 2)) (Var 1)))
+    Abs (App u [[1]]) == v = u == v
+    Abs (Abs (App (App u [[2]]) [[1]])) == v = u == v
+    -- TODO GENERALIZE
     (Abs u) == (Abs v) = u == v
     (App u i) == (App v j) = u == v && i == j
     (Face m) == (Face n) = m == n
     _ == _ = False
 
+-- instance Show Dim where
+--   show [] = ""
 
-instance Show Dim where
-  show (Var i) = show i
-  show (And i j) = show i ++ " and " ++ show j
-  show (Or i j) = show i ++ " or " ++ show j
 
 instance Show Term where
   show (Face name) = name
@@ -86,6 +80,18 @@ depth (App t i) = 0
 
 
 
+decDim :: Cube -> Cube
+decDim Point = Point
+decDim (Path c u v) = Path (decDim c) (decDimT u) (decDimT v)
+  where
+    decDimT :: Term -> Term
+    decDimT (Face name) = Face name
+    decDimT (Abs t) = Abs (decDimT t)
+    decDimT (App t dim) = App (decDimT t) (map (map (\i -> i-1)) dim)
+
+
+
+
 type Solving a = ReaderT SEnv (ExceptT String IO) a
 
 data SEnv =
@@ -113,14 +119,31 @@ lookupDef name = do
 
 subst :: Term -> Int -> Bool -> Solving Term
 subst (Face name) k e = return $ Face name
-subst (Abs t) k e = subst t k e >>= (\r -> return $ Abs r)
-subst (App t (Var i)) k e = do
-  r <- subst t k e
-  if i == k
+subst (Abs t) i e = subst t i e >>= (\r -> return $ Abs r)
+-- subst (App t ([[i]])) k e = do
+--   r <- subst t k e
+--   if i == k
+--     then do
+--       u <- getType r
+--       case u of (Path _ u0 u1) -> return (if e then u1 else u0)
+--     else return $ App r [[i]]
+subst (App t dim) i e = do
+  r <- subst t i e
+  if e
     then do
-      u <- getType r
-      case u of (Path _ u0 u1) -> return (if e then u1 else u0)
-    else return $ App r (Var i)
+      let ndim = map (delete i) dim
+      if [] `elem` ndim
+        then do
+          u <- getType r
+          case u of (Path _ u0 u1) -> return u1
+        else return $ App r ndim
+    else do
+      let ndim = filter (\c -> not (i `elem` c)) dim
+      if ndim == []
+        then do
+          u <- getType r
+          case u of (Path _ u0 u1) -> return u0
+        else return $ App r ndim
 
 
 getType :: Term -> Solving Cube
@@ -130,7 +153,7 @@ getType (Abs t) = do
   u <- subst t numvars False
   v <- subst t numvars True
   nu <- getType t
-  return $ Path nu u v
+  return $ Path (decDim nu) u v
 getType (App t i) = getType t >>= (\r -> case r of (Path c _ _) -> return c)
 
 
@@ -163,24 +186,31 @@ checkBoundaries (Path c u v) = do
     return $ Path c eu ev
 
 
-subsets :: [Int] -> [[Int]]
+subsets :: [a] -> [[a]]
 subsets [ i ] = [[ i ]]
 subsets (i : is) = let r = subsets is in
   [[i]] ++ r ++ map (i:) r
 
 
 formulas :: [Int] -> [Dim]
-formulas [i] = [ Var i ]
-formulas (i : is) = let r = formulas is in
-  r ++ [ And (Var i) phi | phi <- r ]
+-- formulas [i] = [[i]]
+-- formulas (i : is) = [ i:r | i <- subsets is, r <- formulas (i:is) ]
 
--- [ Var i | i <- is ] ++ [ And (Var i) (Var j) | i <- is, j <- is ]
+  -- let r = formulas is in
+  -- r ++ [ And (Var i) phi | phi <- r ]
+
+formulas [] = [[]]
+formulas [i] = [[[i]]]
+-- formulas (i:is) = [ s:r | s <- subsets (i:is), r <- formulas (filter (`notElem` s) (i:is)) ]
+-- TODO TOO MANY!
+formulas (i:is) = [ s:r | s <- subsets (i:is), r <- formulas (reverse (takeWhile (== i) (reverse (i:is)))) ]
 
 
 match :: Decl -> Cube -> Solving [Term]
 match (name,x) c = do
   -- trace $ "Trying to match " ++ show x ++ " with " ++ show c
-  let vars = [ Var i | i <- [1 .. dim c]]
+  -- let vars = [ [[i]] | i <- [1 .. dim c]]
+  let vars = subsets $ subsets [1 .. dim c]
 
   let options = map (`absn` (dim c)) (appn (Face name) vars (dim x))
 
@@ -244,13 +274,13 @@ intCtxt = [
 app1goal = SEnv intCtxt (Path (Path Point (Face "zero") (Face "one")) (Face "seg") (Face "seg"))
 
 -- SOL \.\. App 2 seg
-app2goal = SEnv intCtxt (Path (Path Point (App (Face "seg") (Var 1)) (App (Face "seg") (Var 1))) (Abs (Face "zero")) (Abs (Face "one")))
+app2goal = SEnv intCtxt (Path (Path Point (App (Face "seg") [[1]]) (App (Face "seg") [[1]])) (Abs (Face "zero")) (Abs (Face "one")))
 
 -- SOL \.\. App (And 1 2) seg
-andGoal = SEnv intCtxt (Path (Path Point (Face "zero") (App (Face "seg") (Var 1))) (Abs (Face "zero")) (Face "seg"))
+andGoal = SEnv intCtxt (Path (Path Point (Face "zero") (App (Face "seg") [[1]])) (Abs (Face "zero")) (Face "seg"))
 
 -- SOL \.\. App (Or 1 2) seg
-orGoal = SEnv intCtxt ((Path (Path Point (App (Face "seg") (Var 1)) (Face "one")) (Face "seg")) (Abs (Face "one")))
+orGoal = SEnv intCtxt ((Path (Path Point (App (Face "seg") [[1]]) (Face "one")) (Face "seg")) (Abs (Face "one")))
 
 -- SOL \. App 1 seg
 trivGoal = SEnv intCtxt (Path Point (Face "zero") (Face "one"))
@@ -271,34 +301,38 @@ sqCtxt = [
   , ("q" ,      Path Point (Face "a") (Face "c"))
   , ("r" ,      Path Point (Face "b") (Face "d"))
   , ("s" ,      Path Point (Face "c") (Face "d"))
-  , ("sq" ,     Path (Path Point (App (Face "q") (Var 1)) (App (Face "r") (Var 1))) (Face "p") (Face "s"))
+  , ("sq" ,     Path (Path Point (App (Face "q") [[1]]) (App (Face "r") [[1]])) (Face "p") (Face "s"))
            ]
 
 -- Path Point a d
-lsq11 = Abs (App (App (Face "sq") (Var 1)) (Var 1))
+lsq11 = Abs (App (App (Face "sq") [[1]]) [[1]])
 
 -- Path (Path Point a d) \1.sq<1><1> \1.sq<1><1>
-llsq11 = Abs (Abs (App (App (Face "sq") (Var 1)) (Var 1)))
+llsq11 = Abs (Abs (App (App (Face "sq") [[1]]) [[1]]))
 
 -- Path (Path Point sq<1><1> sq<1><1>) \1.a \1.d
 -- TODO RESULT HAS sq<2><2>
-llsq22 = Abs (Abs (App (App (Face "sq") (Var 2)) (Var 2)))
+llsq22 = Abs (Abs (App (App (Face "sq") [[2]]) [[2]]))
 
+-- Path (Path Point p<1> sq<1><1>) \1.a r
+llsq1and22 = Abs (Abs (App (App (Face "sq") [[1,2]]) [[2]]))
 
+-- Path (Path Point p<1> d) \1.sq<1><1> r
+llsq11or2 = Abs (Abs (App (App (Face "sq") [[1]]) [[1],[2]]))
 
 
 -- SOL \2.\1. sq (2 ∧ 1) 2
-sqands = SEnv sqCtxt (Path (Path Point (App (Face "p") (Var 1)) (App (App (Face "sq") (Var 1)) (Var 1))) (Abs (Face "a")) (Face "r"))
+sqands = SEnv sqCtxt (Path (Path Point (App (Face "p") [[1]]) (App (App (Face "sq") [[1]]) [[1]])) (Abs (Face "a")) (Face "r"))
 
 
 
 -- SOL \.\.\. sq<2><1>
-sq21goal = SEnv sqCtxt (Path (Path (Path Point (App (Face "q") (Var 1)) (App (Face "r") (Var 1))) (Face "p") (Face "s")) (Face "sq") (Face "sq"))
+sq21goal = SEnv sqCtxt (Path (Path (Path Point (App (Face "q") [[1]]) (App (Face "r") [[1]])) (Face "p") (Face "s")) (Face "sq") (Face "sq"))
 
 -- SOL \2.\1.sq<2><2>
 sq22 = SEnv sqCtxt (Path (Path Point
-                          (App (App (Face "sq") (Var 1)) (Var 1))
-                          (App (App (Face "sq") (Var 1)) (Var 1)))
+                          (App (App (Face "sq") [[1]]) [[1]])
+                          (App (App (Face "sq") [[1]]) [[1]]))
                      (Abs (Face "a"))
                      (Abs (Face "d")))
 
@@ -314,11 +348,11 @@ ssetCtxt = [
   , ("edge f" ,      Path Point (Face "vert x") (Face "vert y"))
   , ("edge g" ,      Path Point (Face "vert y") (Face "vert z"))
   , ("edge h" ,      Path Point (Face "vert x") (Face "vert z"))
-  , ("triangle phi" , Path (Path Point (App (Face "edge h") (Var 1)) (App (Face "edge g") (Var 1))) (Face "edge f") (Abs (Face "vert z")))
+  , ("triangle phi" , Path (Path Point (App (Face "edge h") [[1]]) (App (Face "edge g") [[1]])) (Face "edge f") (Abs (Face "vert z")))
            ]
 
 ssetGoal :: Cube
-ssetGoal = Path (Path Point (App (Face "edge f") (Var 1)) (App (Face "edge h") (Var 1))) (Abs (Face "vert x")) (Face "edge g")
+ssetGoal = Path (Path Point (App (Face "edge f") [[1]]) (App (Face "edge h") [[1]])) (Abs (Face "vert x")) (Face "edge g")
 
 ssetEnv :: SEnv
 ssetEnv = SEnv ssetCtxt ssetGoal
