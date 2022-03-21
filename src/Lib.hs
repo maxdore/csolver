@@ -32,9 +32,9 @@ instance Eq Term where
     (Face m) == (Face n) = m == n
     _ == _ = False
 
+-- TODO pretty print disjunctive normal forms
 -- instance Show Dim where
 --   show [] = ""
-
 
 instance Show Term where
   show (Face name) = name
@@ -72,23 +72,20 @@ dim :: Cube -> Int
 dim Point = 0
 dim (Path c u v) = dim c + 1
 
-
 depth :: Term -> Int
 depth (Face name) = 0
 depth (Abs t) = 1 + depth t
 depth (App t i) = 0
 
 
-
+-- TODO use these functions to fix the index mess?
+decDimT :: Term -> Term
+decDimT (Face name) = Face name
+decDimT (Abs t) = Abs (decDimT t)
+decDimT (App t dim) = App (decDimT t) (map (map (\i -> i-1)) dim)
 decDim :: Cube -> Cube
 decDim Point = Point
 decDim (Path c u v) = Path (decDim c) (decDimT u) (decDimT v)
-  where
-    decDimT :: Term -> Term
-    decDimT (Face name) = Face name
-    decDimT (Abs t) = Abs (decDimT t)
-    decDimT (App t dim) = App (decDimT t) (map (map (\i -> i-1)) dim)
-
 
 
 
@@ -97,7 +94,7 @@ type Solving a = ReaderT SEnv (ExceptT String IO) a
 data SEnv =
   SEnv { context :: Tele
        , goal    :: Cube
-       -- , verbose :: Bool
+       -- , verbose :: Bool -- for later
        } deriving (Eq)
 
 
@@ -117,16 +114,10 @@ lookupDef name = do
     Nothing -> throwError $ "Could not find definition of " ++ name
 
 
+-- call it @ or something?
 subst :: Term -> Int -> Bool -> Solving Term
 subst (Face name) k e = return $ Face name
 subst (Abs t) i e = subst t i e >>= (\r -> return $ Abs r)
--- subst (App t ([[i]])) k e = do
---   r <- subst t k e
---   if i == k
---     then do
---       u <- getType r
---       case u of (Path _ u0 u1) -> return (if e then u1 else u0)
---     else return $ App r [[i]]
 subst (App t dim) i e = do
   r <- subst t i e
   if e
@@ -134,33 +125,31 @@ subst (App t dim) i e = do
       let ndim = map (delete i) dim
       if [] `elem` ndim
         then do
-          u <- getType r
+          u <- infer r
           case u of (Path _ u0 u1) -> return u1
         else return $ App r ndim
     else do
       let ndim = filter (\c -> not (i `elem` c)) dim
       if ndim == []
         then do
-          u <- getType r
+          u <- infer r
           case u of (Path _ u0 u1) -> return u0
         else return $ App r ndim
 
 
-getType :: Term -> Solving Cube
-getType (Face name) = lookupDef name
-getType (Abs t) = do
+infer :: Term -> Solving Cube
+infer (Face name) = lookupDef name
+infer (Abs t) = do
   let numvars = depth t + 1
   u <- subst t numvars False
   v <- subst t numvars True
-  nu <- getType t
-  return $ Path (decDim nu) u v
-getType (App t i) = getType t >>= (\r -> case r of (Path c _ _) -> return c)
+  nu <- infer t
+  return $ Path nu u v
+infer (App t i) = infer t >>= (\r -> case r of (Path c _ _) -> return c)
 
 
 hasType :: Term -> Cube -> Solving Bool
-hasType t d = getType t >>= (\c -> return $ c == d)
-
-
+hasType t d = infer t >>= (\c -> return $ c == d)
 
 
 
@@ -169,8 +158,8 @@ checkBoundaries (Point) = return ()
 checkBoundaries (Path c u v) = do
   c0 <- evalTy c False
   c1 <- evalTy c True
-  ut <- getType u
-  vt <- getType v
+  ut <- infer u
+  vt <- infer v
   if c0 /= ut
     then throwError $ "Boundary does not match: " ++ show ut ++ " is not " ++ show c0
   else if c1 /= vt
@@ -186,48 +175,31 @@ checkBoundaries (Path c u v) = do
     return $ Path c eu ev
 
 
-subsets :: [a] -> [[a]]
-subsets [ i ] = [[ i ]]
-subsets (i : is) = let r = subsets is in
-  [[i]] ++ r ++ map (i:) r
 
-
+-- Generates all formulas in dnf? Idea: disjunctive normal normal forms are
+-- those which do not have two clauses where one subsumes the other
+-- (e.g., P or (P and Q))
 formulas :: [Int] -> [Dim]
--- formulas [i] = [[i]]
--- formulas (i : is) = [ i:r | i <- subsets is, r <- formulas (i:is) ]
-
-  -- let r = formulas is in
-  -- r ++ [ And (Var i) phi | phi <- r ]
-
-formulas [] = [[]]
-formulas [i] = [[[i]]]
--- formulas (i:is) = [ s:r | s <- subsets (i:is), r <- formulas (filter (`notElem` s) (i:is)) ]
--- TODO TOO MANY!
-formulas (i:is) = [ s:r | s <- subsets (i:is), r <- formulas (reverse (takeWhile (== i) (reverse (i:is)))) ]
+formulas is = filter (\ phi -> all (\c -> all (\d -> c == d || c \\ d /= []) phi) phi) (subsets (subsets is))
+  where
+  subsets :: [a] -> [[a]]
+  subsets [ i ] = [[ i ]]
+  subsets (i : is) = let r = subsets is in
+    [[i]] ++ r ++ map (i:) r
 
 
 match :: Decl -> Cube -> Solving [Term]
 match (name,x) c = do
-  -- trace $ "Trying to match " ++ show x ++ " with " ++ show c
-  -- let vars = [ [[i]] | i <- [1 .. dim c]]
-  let vars = subsets $ subsets [1 .. dim c]
-
-  let options = map (`absn` (dim c)) (appn (Face name) vars (dim x))
-
-  mapM (\t -> getType t >>= (\ty -> trace $ (show t) ++ " : " ++ show ty)) options
-
+  let options = map (`absn` (dim c)) (appn (Face name) (formulas [1 .. dim c]) (dim x))
+  mapM (\t -> infer t >>= (\ty -> trace $ (show t) ++ " : " ++ show ty)) options
   filterM (`hasType` c) options
-
     where
     absn :: Term -> Int -> Term
     absn t 0 = t
     absn t n = Abs (absn t (n - 1))
-
     appn :: Term -> [Dim] -> Int -> [Term]
     appn t is 0 = [t]
     appn t is n = [ App u i | u <- appn t is (n-1) , i <- is]
-
-
 
 
 solve :: Solving [Term]
@@ -249,11 +221,8 @@ solve = do
 runSolve :: SEnv -> IO (Either String [Term])
 runSolve env = runExceptT $ runReaderT solve env
 
-
-runTyper :: Tele -> Term -> IO (Either String Cube)
-runTyper ctxt t = runExceptT $ runReaderT (getType t) (SEnv ctxt Point)
-
-
+runInfer :: Tele -> Term -> IO (Either String Cube)
+runInfer ctxt t = runExceptT $ runReaderT (infer t) (SEnv ctxt Point)
 
 
 
@@ -289,8 +258,6 @@ trivGoal = SEnv intCtxt (Path Point (Face "zero") (Face "one"))
 invGoal = SEnv intCtxt (Path Point (Face "one") (Face "zero"))
 
 
-
-
 sqCtxt :: Tele
 sqCtxt = [
     ("a" ,     Point)
@@ -320,14 +287,12 @@ llsq1and22 = Abs (Abs (App (App (Face "sq") [[1,2]]) [[2]]))
 -- Path (Path Point p<1> d) \1.sq<1><1> r
 llsq11or2 = Abs (Abs (App (App (Face "sq") [[1]]) [[1],[2]]))
 
+-- Path (Path (Path Point q<[[1]]> r<[[1]]>) p s) sq sq
+lllsq21 = Abs (Abs (Abs (App (App (Face "sq") [[2]]) [[1]])))
+
 
 -- SOL \2.\1. sq (2 ∧ 1) 2
 sqands = SEnv sqCtxt (Path (Path Point (App (Face "p") [[1]]) (App (App (Face "sq") [[1]]) [[1]])) (Abs (Face "a")) (Face "r"))
-
-
-
--- SOL \.\.\. sq<2><1>
-sq21goal = SEnv sqCtxt (Path (Path (Path Point (App (Face "q") [[1]]) (App (Face "r") [[1]])) (Face "p") (Face "s")) (Face "sq") (Face "sq"))
 
 -- SOL \2.\1.sq<2><2>
 sq22 = SEnv sqCtxt (Path (Path Point
@@ -335,6 +300,11 @@ sq22 = SEnv sqCtxt (Path (Path Point
                           (App (App (Face "sq") [[1]]) [[1]]))
                      (Abs (Face "a"))
                      (Abs (Face "d")))
+
+-- SOL \.\.\. sq<2><1>
+sq21 = SEnv sqCtxt (Path (Path (Path Point (App (Face "q") [[1]]) (App (Face "r") [[1]])) (Face "p") (Face "s")) (Face "sq") (Face "sq"))
+-- This works??!?
+
 
 
 
