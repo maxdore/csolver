@@ -1,20 +1,44 @@
+{-# LANGUAGE FlexibleContexts #-}
+-- {-# LANGUAGE RankNTypes #-}
+-- {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeFamilies #-}
+
 module Lib
     ( someFunc
     ) where
 
 import Control.Monad
 import Control.Monad.Except
-import Control.Monad.Reader
+-- import Control.Monad.Reader
+import Control.Monad.State
+-- import Control.Monad.List
 import Data.Maybe
 import Data.List
+import qualified Data.Map as Map
+import Data.Map ((!), Map)
+-- import qualified Data.IntSet as IntSet
+-- import Data.IntSet (IntSet)
+import Data.Set (Set)
+import qualified Data.Set as Set
+
+ifM :: Monad m => m Bool -> m a -> m a -> m a
+ifM b t f = do b <- b; if b then t else f
+
+(||^) :: Monad m => m Bool -> m Bool -> m Bool
+(||^) a b = ifM a (pure True) b
+
+anyM :: Monad m => (a -> m Bool) -> [a] -> m Bool
+anyM p = foldr ((||^) . p) (pure False)
 
 
 
 type Id = String
 
+type Endpoint = Bool
+
 type Dim = [[Int]]
 
-data Term = Face Id | Abs Term | App Term Dim
+data Term = Face Id | Abs Term | App Term Dim -- | Hole Int
 
 data Cube = Path Cube Term Term | Point
   deriving (Eq , Show)
@@ -40,6 +64,19 @@ instance Show Term where
   show (Face name) = name
   show (Abs u) = "\\" ++ show (depth u + 1) ++  "." ++ show u
   show (App u i) = show u ++ "<" ++ show i ++ ">"
+
+
+instance Ord Term where
+  -- compare (Face a) (Face b) = compare a b
+  -- compare (Abs a) (Abs b) = compare a b
+  -- compare (App u i) (App v j) = compare u v
+  (Face a) <= (Face b) = a <= b
+  (Abs u) <= (Abs v) = u <= v
+  (App u i) <= (App v j) = u <= v
+  (Face a) <= t = True
+  (Abs u) <= t = u <= t
+  (App u i) <= t = u <= t
+
 
 -- instance Show Cube where
 --   show Point = "."
@@ -89,33 +126,42 @@ decDim (Path c u v) = Path (decDim c) (decDimT u) (decDimT v)
 
 
 
-type Solving a = ReaderT SEnv (ExceptT String IO) a
+type Solving s a = StateT (SEnv s) (ExceptT String IO) a
+-- newtype Solving s a = Solving {unSolving :: StateT (SEnv s) [] a}
 
-data SEnv =
+data SEnv s =
   SEnv { context :: Tele
        , goal    :: Cube
        -- , verbose :: Bool -- for later
-       } deriving (Eq)
+       , varSupply :: Int
+       , varMap :: VarMap s -- Map Int (Set Term)
+       }
+
+-- type VarSupply s = FDVar s
+data VarInfo a = VarInfo { delayedConstraints :: Solving a (), values :: Set Term }
+type VarMap a = Map Int (VarInfo a)
+-- data FDState s = FDState { varSupply :: VarSupply s, varMap :: VarMap s }
 
 
 
-trace :: String -> Solving ()
+trace :: String -> Solving s ()
 trace s = do
   -- b <- asks verbose
   -- when b $ liftIO (putStrLn s)
   liftIO (putStrLn s)
 
 
-lookupDef :: Id -> Solving Cube
+
+lookupDef :: Id -> Solving s Cube
 lookupDef name = do
-  context <- asks context
+  context <- gets context
   case lookup name context of
     Just c -> return c
     Nothing -> throwError $ "Could not find definition of " ++ name
 
 
 -- call it @ or something?
-subst :: Term -> Int -> Bool -> Solving Term
+subst :: Term -> Int -> Bool -> Solving s Term
 subst (Face name) k e = return $ Face name
 subst (Abs t) i e = subst t i e >>= (\r -> return $ Abs r)
 subst (App t dim) i e = do
@@ -137,7 +183,7 @@ subst (App t dim) i e = do
         else return $ App r ndim
 
 
-infer :: Term -> Solving Cube
+infer :: Term -> Solving s Cube
 infer (Face name) = lookupDef name
 infer (Abs t) = do
   let numvars = depth t + 1
@@ -148,12 +194,26 @@ infer (Abs t) = do
 infer (App t i) = infer t >>= (\r -> case r of (Path c _ _) -> return c)
 
 
-hasType :: Term -> Cube -> Solving Bool
+hasType :: Term -> Cube -> Solving s Bool
 hasType t d = infer t >>= (\c -> return $ c == d)
 
 
+endpointsAgree :: Term -> Endpoint -> Term -> Endpoint -> Solving s Bool
+endpointsAgree (Abs u) i (Abs v) j = do
+  ui <- subst u (depth u + 1) i
+  vi <- subst v (depth v + 1) j
+  trace $ "ENDPOINTS: " ++ show u ++ " ON " ++ show i ++ " AND " ++ show v ++ " ON " ++ show j ++ " : " ++ show (ui) ++ " vs " ++ show vi
+  return $ ui == vi
 
-checkBoundaries :: Cube -> Solving ()
+evalTy :: Cube -> Bool -> Solving s Cube
+evalTy Point e = return Point
+evalTy (Path c u v) e = do
+  let numvars = depth u + 1
+  eu <- subst u numvars e
+  ev <- subst v numvars e
+  return $ Path c eu ev
+
+checkBoundaries :: Cube -> Solving s ()
 checkBoundaries (Point) = return ()
 checkBoundaries (Path c u v) = do
   c0 <- evalTy c False
@@ -165,14 +225,6 @@ checkBoundaries (Path c u v) = do
   else if c1 /= vt
     then throwError $ "Boundary does not match: " ++ show vt ++ " is not " ++ show c1
     else return ()
-  where
-  evalTy :: Cube -> Bool -> Solving Cube
-  evalTy Point e = return Point
-  evalTy (Path c u v) e = do
-    let numvars = depth u + 1
-    eu <- subst u numvars e
-    ev <- subst v numvars e
-    return $ Path c eu ev
 
 
 
@@ -188,11 +240,9 @@ formulas is = filter (\ phi -> all (\c -> all (\d -> c == d || c \\ d /= []) phi
     [[i]] ++ r ++ map (i:) r
 
 
-match :: Decl -> Cube -> Solving [Term]
-match (name,x) c = do
-  let options = map (`absn` (dim c)) (appn (Face name) (formulas [1 .. dim c]) (dim x))
-  mapM (\t -> infer t >>= (\ty -> trace $ (show t) ++ " : " ++ show ty)) options
-  filterM (`hasType` c) options
+-- For a given declaration generate all possible terms that could fit in a cube
+fitin :: Decl -> Int -> Solving s [Term]
+fitin (name,x) cdim = return $ map (`absn` cdim) (appn (Face name) (formulas [1 .. cdim]) (dim x))
     where
     absn :: Term -> Int -> Term
     absn t 0 = t
@@ -202,27 +252,156 @@ match (name,x) c = do
     appn t is n = [ App u i | u <- appn t is (n-1) , i <- is]
 
 
-solve :: Solving [Term]
+
+
+
+newVar :: [Term] -> Solving s Int
+newVar domain = do
+    v <- nextVar
+    v `isOneOf` domain
+    return v
+    where
+        -- nextVar :: Solving
+        nextVar = do
+            s <- get
+            let v = varSupply s
+            put $ s { varSupply = (v + 1) }
+            return v
+        -- isOneOf :: Solving -> [Term] -> Solving
+        x `isOneOf` domain =
+            modify $ \s ->
+                let vm = varMap s
+                    vi = VarInfo {
+                        delayedConstraints = return (),
+                        values = Set.fromList domain}
+                in
+                s { varMap = Map.insert x vi vm }
+
+lookupDom :: Int -> Solving s (Set Term)
+lookupDom x = do
+    s <- get
+    return . values $ varMap s ! x
+
+
+update :: Int -> Set Term -> Solving s ()
+update x i = do
+    s <- get
+    let vm = varMap s
+    let vi = vm ! x
+    put $ s { varMap = Map.insert x (vi { values = i}) vm }
+    delayedConstraints vi
+
+addConstraint :: Int -> Solving s () -> Solving s ()
+addConstraint x constraint = do
+    s <- get
+    let vm = varMap s
+    let vi = vm ! x
+    let cs = delayedConstraints vi
+    put $ s { varMap =
+        Map.insert x (vi { delayedConstraints = cs >> constraint }) vm }
+
+type BinaryConstraint s = Int -> Int -> Solving s ()
+addBinaryConstraint :: BinaryConstraint s -> BinaryConstraint s
+addBinaryConstraint f x y = do
+    let constraint  = f x y
+    constraint
+    addConstraint x constraint
+    addConstraint y constraint
+
+-- -- -- -- hasValue :: FDVar s -> Term -> FD s ()
+-- -- -- -- var `hasValue` val = do
+-- -- -- --     vals <- lookupDom var
+-- -- -- --     -- guard $ val `IntSet.member` vals
+-- -- -- --     let i = Set.singleton val
+-- -- -- --     when (i /= vals) $ update var i
+
+
+endpoints :: Endpoint -> Endpoint -> Int -> Int -> Solving s ()
+endpoints i j = addBinaryConstraint $ \x y -> do
+    xv <- lookupDom x
+    yv <- lookupDom y
+    xv' <- filterM (\x' -> anyM (\y' -> endpointsAgree x' i y' j) (Set.toList yv)) (Set.toList xv)
+    yv' <- filterM (\y' -> anyM (\x' -> endpointsAgree x' i y' j) (Set.toList yv)) (Set.toList yv)
+    when (xv' /= Set.toList xv) $ update x (Set.fromList xv')
+    when (yv' /= Set.toList yv) $ update y (Set.fromList yv')
+
+
+
+labelling :: [Int] -> Solving s [Term]
+labelling = mapM label where
+    label :: Int -> Solving s Term
+    label var = do
+        vals <- lookupDom var
+        trace $ show var ++ " : " ++ show vals
+        let val = (Set.toList vals) !! 0
+        -- val <- Solving . lift $ Set.toList vals
+        -- var `hasValue` val
+        return val
+
+
+
+
+comp :: Cube -> [Term] -> Solving s [Term]
+comp (Path Point a b) shapes = do
+  lshapes <- filterM (\t -> infer t >>= (\ty -> case ty of
+                                            Path Point _ u -> return $ a == u
+                                            _ -> return False)) shapes
+  rshapes <- filterM (\t -> infer t >>= (\ty -> case ty of
+                                            Path Point _ u -> return $ b == u
+                                            _ -> return False)) shapes
+  (trace . show) lshapes
+  (trace . show) shapes
+  (trace . show) rshapes
+
+  xa <- newVar lshapes
+  xy <- newVar shapes
+  yb <- newVar rshapes
+
+  -- endpoints False False xy xa
+  endpoints True False xy yb
+
+  res <- labelling [xa , xy , yb]
+
+  trace "RESULT"
+  -- (trace . show) res
+  return []
+
+
+
+
+
+
+solve :: Solving s [Term]
 solve = do
   trace "CONTEXT"
-  context <- asks context
+  context <- gets context
   mapM (\(name , u) -> trace $ name ++ " : " ++ show u) context
   mapM (\(name , u) -> checkBoundaries u) context
 
   trace "GOAL"
-  goal <- asks goal
+  goal <- gets goal
   trace $ show goal
   checkBoundaries goal
 
-  res <- mapM (\ d -> match d goal) context
-  return $ concat res
+  shapes <- do
+    allshapes <- mapM (\ d -> fitin d (dim goal)) context
+    return $ concat allshapes
+
+  trace "SHAPES"
+  mapM (\t -> infer t >>= (\ty -> trace $ (show t) ++ " : " ++ show ty)) shapes
+
+  res <- filterM (`hasType` goal) shapes
+
+  if res /= []
+    then return res
+    else comp goal shapes
 
 
-runSolve :: SEnv -> IO (Either String [Term])
-runSolve env = runExceptT $ runReaderT solve env
+runSolve :: SEnv s -> IO (Either String ([Term],SEnv s))
+runSolve env = runExceptT $ runStateT solve env
 
-runInfer :: Tele -> Term -> IO (Either String Cube)
-runInfer ctxt t = runExceptT $ runReaderT (infer t) (SEnv ctxt Point)
+runInfer :: Tele -> Term -> IO (Either String (Cube,SEnv s))
+runInfer ctxt t = runExceptT $ runStateT (infer t) (SEnv ctxt Point 0 Map.empty)
 
 
 
@@ -255,7 +434,7 @@ orGoal = SEnv intCtxt ((Path (Path Point (App (Face "seg") [[1]]) (Face "one")) 
 trivGoal = SEnv intCtxt (Path Point (Face "zero") (Face "one"))
 
 -- SOL hcomp
-invGoal = SEnv intCtxt (Path Point (Face "one") (Face "zero"))
+invGoal = SEnv intCtxt (Path Point (Face "one") (Face "zero")) 0 Map.empty
 
 
 sqCtxt :: Tele
@@ -290,6 +469,9 @@ llsq11or2 = Abs (Abs (App (App (Face "sq") [[1]]) [[1],[2]]))
 -- Path (Path (Path Point q<[[1]]> r<[[1]]>) p s) sq sq
 lllsq21 = Abs (Abs (Abs (App (App (Face "sq") [[2]]) [[1]])))
 
+-- Path (λ i → Path (λ j → Path Point (p (i ∨ j)) d) (λ k → sq k (i ∨ k)) r) (λ j k → sq k (j ∨ k)) λ _ → r
+-- Path (Path (Path Point p<[[2],[3]]> d) \1.sq<[[1]]><[[1],[3]]> \1.r<[[1]]>) \2.\1.sq<[[1]]><[[1],[2]]> \2.\1.r<[[1]]>
+lllsqor = (Abs (Abs (Abs (App (App (Face "sq") [[1]]) [[1],[2],[3]]))))
 
 -- SOL \2.\1. sq (2 ∧ 1) 2
 sqands = SEnv sqCtxt (Path (Path Point (App (Face "p") [[1]]) (App (App (Face "sq") [[1]]) [[1]])) (Abs (Face "a")) (Face "r"))
@@ -312,20 +494,17 @@ sq21 = SEnv sqCtxt (Path (Path (Path Point (App (Face "q") [[1]]) (App (Face "r"
 
 ssetCtxt :: Tele
 ssetCtxt = [
-    ("vert x" ,     Point)
-  , ("vert y" ,     Point)
-  , ("vert z" ,     Point)
-  , ("edge f" ,      Path Point (Face "vert x") (Face "vert y"))
-  , ("edge g" ,      Path Point (Face "vert y") (Face "vert z"))
-  , ("edge h" ,      Path Point (Face "vert x") (Face "vert z"))
-  , ("triangle phi" , Path (Path Point (App (Face "edge h") [[1]]) (App (Face "edge g") [[1]])) (Face "edge f") (Abs (Face "vert z")))
+    ("x" ,     Point)
+  , ("y" ,     Point)
+  , ("z" ,     Point)
+  , ("f" ,      Path Point (Face "x") (Face "y"))
+  , ("g" ,      Path Point (Face "y") (Face "z"))
+  , ("h" ,      Path Point (Face "x") (Face "z"))
+  , ("phi" , Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
            ]
 
-ssetGoal :: Cube
-ssetGoal = Path (Path Point (App (Face "edge f") [[1]]) (App (Face "edge h") [[1]])) (Abs (Face "vert x")) (Face "edge g")
+lowerT = SEnv ssetCtxt $ Path (Path Point (App (Face "f") [[1]]) (App (Face "h") [[1]])) (Abs (Face "x")) (Face "g")
 
-ssetEnv :: SEnv
-ssetEnv = SEnv ssetCtxt ssetGoal
 
 
 
@@ -389,3 +568,4 @@ compGoal = Path Point (Face "w") (Face "z")
 
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
+
