@@ -39,6 +39,7 @@ type Endpoint = Bool
 type Dim = [[Int]]
 
 data Term = Face Id | Abs Term | App Term Dim -- | Hole Int
+  deriving (Eq)
 
 data Cube = Path Cube Term Term | Point
   deriving (Eq , Show)
@@ -47,14 +48,18 @@ type Decl = (Id,Cube)
 type Tele   = [Decl]
 
 
-instance Eq Term where
-    Abs (App u [[1]]) == v = u == v
-    Abs (Abs (App (App u [[2]]) [[1]])) == v = u == v
-    -- TODO GENERALIZE
-    (Abs u) == (Abs v) = u == v
-    (App u i) == (App v j) = u == v && i == j
-    (Face m) == (Face n) = m == n
-    _ == _ = False
+data Result = Dir Term | Comp Term [(Term,Term)]
+  deriving (Show)
+
+
+-- instance Eq Term where
+--     Abs (App u [[1]]) == v = u == v
+--     -- Abs (Abs (App (App u [[2]]) [[1]])) == v = u == v
+--     -- TODO GENERALIZE
+--     (Abs u) == (Abs v) = u == v
+--     (App u i) == (App v j) = u == v && i == j
+--     (Face m) == (Face n) = m == n
+--     _ == _ = False
 
 -- TODO pretty print disjunctive normal forms
 -- instance Show Dim where
@@ -126,15 +131,38 @@ decDim (Path c u v) = Path (decDim c) (decDimT u) (decDimT v)
 
 
 
+inDnf :: Dim -> Bool
+inDnf phi = all (\c -> all (\d -> c == d || c \\ d /= []) phi) phi
+
+redDnf :: Dim -> Dim
+redDnf phi = filter (\c -> not (any (\d -> c /= d && d `isSubsequenceOf` c) norm)) norm
+  where norm = (nub $ map sort phi)
+
+-- Generates all formulas in dnf? Idea: disjunctive normal normal forms are
+-- those which do not have two clauses where one subsumes the other
+-- (e.g., P or (P and Q))
+formulas :: [Int] -> [Dim]
+formulas is = filter inDnf (subsets (subsets is))
+  where
+  subsets :: [a] -> [[a]]
+  subsets [ i ] = [[ i ]]
+  subsets (i : is) = let r = subsets is in
+    [[i]] ++ r ++ map (i:) r
+
+
+
+
 type Solving s a = StateT (SEnv s) (ExceptT String IO) a
 
 data SEnv s =
   SEnv { context :: Tele
        , goal    :: Cube
-       -- , verbose :: Bool -- for later
        , varSupply :: Int
        , varMap :: VarMap s -- Map Int (Set Term)
+       , verbose :: Bool -- for later
        }
+
+mkSEnv ctxt goal = SEnv ctxt goal 0 Map.empty True
 
 -- type VarSupply s = FDVar s
 data VarInfo a = VarInfo { delayedConstraints :: Solving a (), values :: Set Term }
@@ -145,9 +173,9 @@ type VarMap a = Map Int (VarInfo a)
 
 trace :: String -> Solving s ()
 trace s = do
-  -- b <- asks verbose
-  -- when b $ liftIO (putStrLn s)
-  liftIO (putStrLn s)
+  b <- gets verbose
+  when b $ liftIO (putStrLn s)
+  -- liftIO (putStrLn s)
 
 
 
@@ -160,21 +188,20 @@ lookupDef name = do
 
 
 -- call it @ or something?
-subst :: Term -> Int -> Bool -> Solving s Term
-subst (Face name) k e = return $ Face name
-subst (Abs t) i e = subst t i e >>= (\r -> return $ Abs r)
--- subst (Abs t) i e = subst t i e
-subst (App t dim) i e = do
-  r <- subst t i e
+eval :: Term -> Int -> Bool -> Solving s Term
+eval (Face name) k e = return $ Face name
+eval (Abs t) i e = eval t i e >>= (\r -> return $ Abs r)
+eval (App t dim) i e = do
+  r <- eval t i e
   if e
     then do
       let ndim = map (delete i) dim
       if [] `elem` ndim
         then do
           u <- infer r
-          trace $ "SUBST" ++ show ndim
-          trace $ show r ++ " : " ++ show u
-          case u of (Path _ u0 u1) -> return u1
+          -- trace $ "EVAL" ++ show ndim
+          -- trace $ show r ++ " : " ++ show u
+          case u of (Path _ u v) -> return v
         else return $ App r ndim
         -- else return r
     else do
@@ -182,12 +209,34 @@ subst (App t dim) i e = do
       if ndim == []
         then do
           u <- infer r
-          case u of (Path _ u0 u1) -> return u0
+          case u of (Path _ u v) -> return u
         else return $ App r ndim
         -- else return r
 
 apply :: Term -> Bool -> Solving s Term
-apply (Abs t) = subst t (depth t)
+apply (Abs t) = eval t (depth t)
+
+
+
+
+
+
+
+subst :: Term -> Int -> Dim -> Term
+subst (Face name) i r = Face name
+subst (Abs t) i r = Abs (subst t i r)
+subst (App t s) i r = App (subst t i r) (subst' s i r)
+  where
+  subst' :: Dim -> Int -> Dim -> Dim
+  subst' s i r = redDnf $ concat $ map (\c -> if i `elem` c
+                                 then map (++ delete i c) r
+                                 else [c]
+                                  ) s
+
+
+substC :: Cube -> Int -> Dim -> Cube
+substC Point _ _ = Point
+substC (Path c u v) i r = Path (substC c i r) (subst u i r) (subst v i r)
 
 
 infer :: Term -> Solving s Cube
@@ -195,10 +244,15 @@ infer (Face name) = lookupDef name
 infer (Abs t) = do
   ty <- infer t
   let numvars = depth t + 1
-  u <- subst t numvars False
-  v <- subst t numvars True
-  return $ Path ty u v
-infer (App t i) = infer t >>= (\r -> case r of (Path c _ _) -> return c) -- nonono
+  u <- eval t numvars False
+  v <- eval t numvars True
+  return $ Path (decDim ty) u v
+  -- return $ Path (decDim ty) u v
+infer (App t i) = do
+  ty <- infer t
+  case ty of (Path c _ _)
+               -> return $ substC c 1 i
+  -- subst 1 in c for i?
 
 
 hasType :: Term -> Cube -> Solving s Bool
@@ -207,8 +261,8 @@ hasType t d = infer t >>= (\c -> return $ c == d)
 
 endpointsAgree :: Term -> Endpoint -> Term -> Endpoint -> Solving s Bool
 endpointsAgree (Abs u) i (Abs v) j = do
-  ui <- subst u (depth u + 1) i
-  vi <- subst v (depth v + 1) j
+  ui <- eval u (depth u + 1) i
+  vi <- eval v (depth v + 1) j
   trace $ "ENDPOINTS: " ++ show u ++ " ON " ++ show i ++ " AND " ++ show v ++ " ON " ++ show j ++ " : " ++ show (ui) ++ " vs " ++ show vi
   return $ ui == vi
 
@@ -216,13 +270,13 @@ evalTy :: Cube -> Bool -> Solving s Cube
 evalTy Point e = return Point
 evalTy (Path c u v) e = do
   let numvars = depth u + 1
-  eu <- subst u numvars e
-  ev <- subst v numvars e
+  eu <- eval u numvars e
+  ev <- eval v numvars e
   return $ Path c eu ev
 
-checkBoundaries :: Cube -> Solving s ()
-checkBoundaries (Point) = return ()
-checkBoundaries (Path c u v) = do
+wellFormedCube :: Cube -> Solving s ()
+wellFormedCube (Point) = return ()
+wellFormedCube (Path c u v) = do
   c0 <- evalTy c False
   c1 <- evalTy c True
   ut <- infer u
@@ -235,28 +289,37 @@ checkBoundaries (Path c u v) = do
 
 
 
--- Generates all formulas in dnf? Idea: disjunctive normal normal forms are
--- those which do not have two clauses where one subsumes the other
--- (e.g., P or (P and Q))
-formulas :: [Int] -> [Dim]
-formulas is = filter (\ phi -> all (\c -> all (\d -> c == d || c \\ d /= []) phi) phi) (subsets (subsets is))
-  where
-  subsets :: [a] -> [[a]]
-  subsets [ i ] = [[ i ]]
-  subsets (i : is) = let r = subsets is in
-    [[i]] ++ r ++ map (i:) r
+
+absn :: Term -> Int -> Term
+absn t 0 = t
+absn t n = Abs (absn t (n - 1))
+
+appn :: Term -> [Dim] -> Int -> [Term]
+appn t is 0 = [t]
+appn t is n = [ App u i | u <- appn t is (n-1) , i <- is]
 
 
 -- For a given declaration generate all possible terms that could fit in a cube
 fitin :: Decl -> Int -> Solving s [Term]
 fitin (name,x) cdim = return $ map (`absn` cdim) (appn (Face name) (formulas [1 .. cdim]) (dim x))
-    where
-    absn :: Term -> Int -> Term
-    absn t 0 = t
-    absn t n = Abs (absn t (n - 1))
-    appn :: Term -> [Dim] -> Int -> [Term]
-    appn t is 0 = [t]
-    appn t is n = [ App u i | u <- appn t is (n-1) , i <- is]
+
+
+
+getBoundary :: Term -> Int -> Endpoint -> Solving s Term
+getBoundary t i e = do
+  ty <- infer t
+  getBoundaryC ty i e 0 -- >>= return . decDimT
+
+getBoundaryC :: Cube -> Int -> Endpoint -> Int -> Solving s Term
+getBoundaryC (Path c u v) i e d = if i == 1
+      then if e then return (absn v d) else return (absn u d)
+           -- then do
+           --   trace $ show v
+           --   infer v
+           -- do
+           --   trace $ show (absn u d)
+           --   infer (absn u d)
+      else getBoundaryC c (i-1) e (d + 1)
 
 
 
@@ -346,7 +409,45 @@ labelling = mapM label where
 
 
 
-comp :: Cube -> [Term] -> Solving s [Term]
+comp :: Cube -> [Term] -> Solving s (Maybe Result)
+
+comp c shapes = do
+  let dims = [1..(dim c)]
+  trace $ show c
+
+  sides0 <- mapM (\i -> do
+                     cb <- getBoundaryC c i False 0
+                     -- trace $ show i ++ " with boundary " ++ show cb
+                     (filterM (\ s -> do
+                                     sb <- getBoundary s i True
+                                     -- trace $ show s ++ ":\n" ++ show sb ++ "\n" ++ show cb ++ "\n" ++ show (sb == cb)
+                                     return $ sb == cb
+                                     ) shapes) >>= newVar) dims
+  sides1 <- mapM (\i -> do
+                     cb <- getBoundaryC c i True 0
+                     -- trace $ show i ++ " with boundary " ++ show cb
+                     (filterM (\ s -> do
+                                     sb <- getBoundary s i True
+                                     -- trace $ show s ++ ":\n" ++ show sb ++ "\n" ++ show cb ++ "\n" ++ show (sb == cb)
+                                     return $ sb == cb
+                                     ) shapes) >>= newVar) dims
+  back <- newVar shapes
+
+  -- mapM (\s -> lookupDom s >>= trace . show) sides0
+  -- mapM (\s -> lookupDom s >>= trace . show) sides1
+  -- lookupDom back >>= trace . show
+
+  mapM (\i -> endpoints False False back (sides0 !! (i-1))) dims
+  mapM (\i -> endpoints True False back (sides1 !! (i-1))) dims
+
+  res <- labelling (back : sides0 ++ sides1)
+  trace "RESULT"
+  (trace . show) res
+  return $ Just $ Comp (res !! 0) (map (\i -> (res !! i , res !! (i*2))) dims)
+
+  -- return Nothing
+
+
 comp (Path Point a b) shapes = do
   lshapes <- filterM (\t -> infer t >>= (\ty -> case ty of
                                             Path Point _ u -> return $ a == u
@@ -369,7 +470,7 @@ comp (Path Point a b) shapes = do
 
   trace "RESULT"
   (trace . show) res
-  return []
+  return Nothing
 
 
 comp (Path (Path Point q r) p s) shapes = do
@@ -382,7 +483,7 @@ comp (Path (Path Point q r) p s) shapes = do
   qshapes <- filterM (\s -> do
     bound <- apply s False
     sty <- infer bound
-    trace $ show s ++ " : " ++ show sty
+    trace $ show bound ++ " : " ++ show sty
     return $ sty == qty) shapes
 
   -- rshapes <- filterM (\t -> infer t >>= (\ty -> case ty of
@@ -406,31 +507,24 @@ comp (Path (Path Point q r) p s) shapes = do
   -- endpoints True False xy yb
 
 
-  return []
-
-rightBoundary :: Term -> Endpoint -> Solving s ()
--- rightBoundary (Path (Path Point q r) p s) = do
-rightBoundary u e = do
-  ty <- infer u
-  trace $ show u ++ " : " ++ show ty
-  boundary <- apply u e
-  ty' <- infer boundary
-  trace $ show boundary ++ " : " ++ show ty'
-  return ()
+  return Nothing
 
 
 
-solve :: Solving s [Term]
+
+
+
+solve :: Solving s Result
 solve = do
   trace "CONTEXT"
   context <- gets context
   mapM (\(name , u) -> trace $ name ++ " : " ++ show u) context
-  mapM (\(name , u) -> checkBoundaries u) context
+  mapM (\(name , u) -> wellFormedCube u) context
 
   trace "GOAL"
   goal <- gets goal
   trace $ show goal
-  checkBoundaries goal
+  wellFormedCube goal
 
   shapes <- do
     allshapes <- mapM (\ d -> fitin d (dim goal)) context
@@ -445,16 +539,29 @@ solve = do
   trace $ show res
 
   if res /= []
-    then return res
-    else comp goal shapes
+    then return $ Dir (res !! 0)
+    else do
+      hres <- comp goal shapes
+      case hres of
+        Just com -> return com
+        Nothing -> throwError "No solution found"
 
 
-runSolve :: SEnv s -> IO (Either String ([Term],SEnv s))
-runSolve env = runExceptT $ runStateT solve env
+runSolve :: SEnv s -> IO (Either String (Result,SEnv s))
+runSolve env = do
+  res <- runExceptT $ runStateT solve env
+  case res of
+    Left err -> do
+      putStrLn $ "ERROR: " ++ err
+    Right (r , _)->
+      putStrLn $ show r
+  return res
+
+
 
 runInfer :: Tele -> Term -> IO (Either String (Cube,SEnv s))
 runInfer ctxt t = do
-  res <- runExceptT $ runStateT (infer t) (SEnv ctxt Point 0 Map.empty)
+  res <- runExceptT $ runStateT (infer t) (mkSEnv ctxt Point)
   case res of
     Left err -> do
       putStrLn $ "ERROR: " ++ err
@@ -462,9 +569,28 @@ runInfer ctxt t = do
       putStrLn $ show ty
   return res
 
-runTest :: Tele -> Term -> Endpoint -> IO (Either String ((),SEnv s))
-runTest ctxt t e = runExceptT $ runStateT (rightBoundary t e) (SEnv ctxt Point 0 Map.empty)
+-- runTest :: Tele -> Term -> Int -> Endpoint -> IO (Either String (Cube,SEnv s))
+-- runTest ctxt t i e = do
+--   inferRes <- runExceptT $ runStateT (infer t) (SEnv ctxt Point 0 Map.empty)
+--   case inferRes of
+--     (Right (ty , _)) -> do
+--         res <- runExceptT $ runStateT (getBoundary ty i e) (SEnv ctxt Point 0 Map.empty)
+--         case res of
+--           Left err -> do
+--             putStrLn $ "ERROR: " ++ err
+--           Right (sigma , _)->
+--             putStrLn $ show sigma
+--         return res
 
+runTest :: Tele -> Term -> Int -> Endpoint -> IO (Either String (Term,SEnv s))
+runTest ctxt t i e = do
+  res <- runExceptT $ runStateT (getBoundary t i e) (mkSEnv ctxt Point)
+  case res of
+    Left err -> do
+      putStrLn $ "ERROR: " ++ err
+    Right (sigma , _)->
+      putStrLn $ show sigma
+  return res
 
 
 -- Basic examples
@@ -493,10 +619,10 @@ andGoal = SEnv intCtxt (Path (Path Point (Face "zero") (App (Face "seg") [[1]]))
 orGoal = SEnv intCtxt ((Path (Path Point (App (Face "seg") [[1]]) (Face "one")) (Face "seg")) (Abs (Face "one")))
 
 -- SOL \. App 1 seg
-trivGoal = SEnv intCtxt (Path Point (Face "zero") (Face "one"))
+trivGoal = mkSEnv intCtxt (Path Point (Face "zero") (Face "one"))
 
 -- SOL hcomp
-invGoal = SEnv intCtxt (Path Point (Face "one") (Face "zero")) 0 Map.empty
+invGoal = mkSEnv intCtxt (Path Point (Face "one") (Face "zero"))
 
 
 sqCtxt :: Tele
@@ -565,7 +691,7 @@ ssetCtxt = [
   , ("phi" , Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
            ]
 
-lowerT = SEnv ssetCtxt (Path (Path Point (App (Face "f") [[1]]) (App (Face "h") [[1]])) (Abs (Face "x")) (Face "g")) 0 Map.empty
+lowerT = mkSEnv ssetCtxt (Path (Path Point (App (Face "f") [[1]]) (App (Face "h") [[1]])) (Abs (Face "x")) (Abs (App (Face "g") [[1]])))
 
 
 
@@ -585,7 +711,7 @@ compCtxt = [
   , ("r" , Path Point (Face "y") (Face "z"))
            ]
 
-compGoal = SEnv compCtxt (Path Point (Face "w") (Face "z")) 0 Map.empty
+compGoal = mkSEnv compCtxt (Path Point (Face "w") (Face "z"))
 
 
 -- Goal: A
