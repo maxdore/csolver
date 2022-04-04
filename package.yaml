@@ -23,9 +23,12 @@ dependencies:
 - base >= 4.7 && < 5
 - mtl >= 2.2.2
 - containers >= 0.6.5
+- unordered-containers >= 0.2.16
 - typed-process >= 0.2.8
 - bytestring >= 0.10.12
+- stringsearch >= 0.3.6
 - aeson >= 0.5.0
+- parsec >= 3.1.14
 
 library:
   source-dirs: src
