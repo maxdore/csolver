@@ -119,3 +119,18 @@ formulas is = filter inDnf (subsets (subsets is))
   subsets [ i ] = [[ i ]]
   subsets (i : is) = let r = subsets is in
     [[i]] ++ r ++ map (i:) r
+
+
+
+getTFace :: Term -> Id
+getTFace (Face name) = name
+getTFace (Abs t) = getTFace t
+getTFace (App t r) = getTFace t
+
+
+getCFaces :: Cube -> [Id]
+getCFaces Point = []
+getCFaces (Path c u v) = nub $ getCFaces c ++ [ getTFace u , getTFace v ]
+
+
+

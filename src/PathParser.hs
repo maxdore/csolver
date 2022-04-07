@@ -1,9 +1,9 @@
 module PathParser where
 
 
-import Data.Map (Map)
+import Data.Map (Map , (!))
 import qualified Data.Map as Map
-import Text.Parsec (runP)
+import Text.Parsec (runP , updateState)
 import Text.ParserCombinators.Parsec
 import qualified Text.ParserCombinators.Parsec.Token as P
 import Text.ParserCombinators.Parsec.Language
@@ -17,61 +17,76 @@ data PState = PState Int (Map String Int)
 
 
 
--- parseVar :: GenParser Char st String
-parseVar = many1 $ letter <|> char '_'
+-- parseVar :: GenParser Char PState String
+ident = many1 alphaNum
+
+parseVar = many1 $ alphaNum <|> char '_'
 
 
-parseAbs :: GenParser Char st ()
+bindVar :: String -> PState -> PState
+bindVar v (PState i f) = PState (i+1) (Map.insert v i f)
+
+getBind :: PState -> String -> Int
+getBind (PState _ f) = (!) f
+
+
+parseAbs :: GenParser Char PState ()
 parseAbs = do
-  string "\955"
+  char '\955'
   spaces
   var <- parseVar
   spaces
-  -- TODO UPDATE STATE
-  trace "Wh" $ string "\8594"
+  updateState (bindVar var)
+  char '\8594'
   spaces
   return ()
 
 
-parseFace :: GenParser Char st Term
-parseFace = do
-  name <- many1 letter
-  return $ Face name
+parseDim :: GenParser Char PState [[Int]]
+parseDim = undefined
 
-parseApp :: GenParser Char st Term
-parseApp = do
-  -- t <- parseTerm
-  many1 $ letter
-  char ' '
-  many1 $ letter
-  return $ App (Face "temp") [[1]]
+parseBase :: GenParser Char PState Term
+parseBase = do
+  face <- ident
+  apps <- many (try (char ' ' >> ident))
+  st <- getState
+  return $ foldl (\t i -> App t [[getBind st i]]) (Face face) apps
+  -- return $ Face face
 
 
-parseTerm :: GenParser Char st Term
-parseTerm = try parseApp <|> (do {parseAbs ; t <- parseTerm ; return $ Abs t}) <|> try parseFace
+parseTerm :: GenParser Char PState Term
+parseTerm = (do {parseAbs ; t <- parseTerm ; return $ Abs t}) <|> parseBase
+-- parseTerm = try parseApp <|> (do {parseAbs ; t <- parseTerm ; return $ Abs t}) <|> try parseFace
 
 
-parsePathP :: GenParser Char st Cube
+
+parsePathP :: GenParser Char PState Cube
 parsePathP = do
   string "PathP "
   r <- between (char '(') (char ')') (parseAbs >> parsePath)
   char ' '
-  u <- between (char '(') (char ')') parseTerm
+  u <- (between (char '(') (char ')') parseTerm) <|> parseTerm
   char ' '
-  v <- between (char '(') (char ')') parseTerm
+  v <- (between (char '(') (char ')') parseTerm) <|> parseTerm
   return $ Path r u v
 
 
-parseEq :: GenParser Char st Cube
+parseEq :: GenParser Char PState Cube
 parseEq = do
   u <- parseTerm
-  string " \8801 "
+  spaces
+  char '\8801'
+  spaces
   v <- parseTerm
   return $ Path Point u v
 
+parsePoint :: GenParser Char PState Cube
+parsePoint = do
+  parseVar
+  return Point
 
-parsePath :: GenParser Char st Cube
-parsePath = parsePathP <|> parseEq
+parsePath :: GenParser Char PState Cube
+parsePath = try parsePathP <|> try parseEq <|> parsePoint
 
 parseCube :: String -> Either ParseError Cube
 -- parseCube input = parse parsePath "" input

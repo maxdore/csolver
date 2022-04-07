@@ -3,9 +3,7 @@
 -- {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Lib
-    ( someFunc
-    ) where
+module Lib where
 
 import Control.Monad
 import Control.Monad.Except
@@ -136,12 +134,12 @@ infer (Abs t) = do
   let numvars = depth t + 1
   u <- eval t numvars False
   v <- eval t numvars True
-  return $ Path (decDim ty) u v
+  return $ Path ty u v
   -- return $ Path (decDim ty) u v
 infer (App t i) = do
   ty <- infer t
   case ty of (Path c _ _)
-               -> return $ substC c 1 i
+               -> return $ substC c (dim c + 1) i
   -- subst 1 in c for i?
 
 
