@@ -101,6 +101,13 @@ decDim Point = Point
 decDim (Path c u v) = Path (decDim c) (decDimT u) (decDimT v)
 
 
+decUnbound :: Term -> Term
+decUnbound t = decUnbound' t 0
+  where
+  decUnbound' (Face name) i = Face name
+  decUnbound' (Abs t) i = Abs $ decUnbound' t (i + 1)
+  decUnbound' (App t r) i = App (decUnbound' t i) (map (map (\j -> if j <= i then j else j-1)) r)
+
 
 inDnf :: Dim -> Bool
 inDnf phi = all (\c -> all (\d -> c == d || c \\ d /= []) phi) phi

@@ -7,6 +7,7 @@ import qualified Data.ByteString.Lazy as Byte
 import qualified Data.ByteString.Lazy.Search as ByteS
 
 import Data.String
+import Data.List
 import qualified Data.Text.Lazy             as TL
 import qualified Data.Text.Lazy.Encoding    as TL
 import qualified Data.Text.Lazy.IO          as TL
@@ -24,6 +25,7 @@ readGoals :: String -> IO [Cube]
 readGoals file = do
   let cmd = "IOTCM \"" ++ file ++ "\" None Indirect (Cmd_load \"" ++ file ++ "\" [])"
   (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
+  print out
 
   let goalInd = ByteS.indices "\"type\":\"" out
   let goalsRaw = map (\i -> ByteS.split "\"" (Byte.drop (i + 8) out) !! 0) goalInd
@@ -31,7 +33,7 @@ readGoals file = do
   print $ (TL.unpack . TL.decodeUtf8) (goalsRaw !! 0)
 
   let goals = sequence (map  (parseCube . TL.unpack . TL.decodeUtf8) goalsRaw)
-
+  print goals
   case goals of
     Right gs -> return gs
     -- Left parserr -> print "Could not parse goals in file" >> return [Point]
@@ -49,10 +51,33 @@ inferType file name = do
   case ty of
     Right t -> return t
 
+searchLemmas :: String -> Id -> IO [Decl]
+searchLemmas file name = do
+  let cmd = "IOTCM \"" ++ file ++ "\" NonInteractive Indirect (Cmd_search_about_toplevel Simplified \"" ++ name ++ "\")"
+  (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
+
+  let lemmasInd = ByteS.indices "\"name\":\"" out
+  let lemmasName = map (\i -> ByteS.split "\"" (Byte.drop (i + 8) out) !! 0) lemmasInd
+  let lemmasRaw = map (\k -> ByteS.split "\"" (Byte.drop ((lemmasInd !! k) + (Byte.length (lemmasName !! k)) + 18) out) !! 0) [0 .. (length lemmasInd)-1]
+
+  let lemmas = (map  (parseCube . TL.unpack . TL.decodeUtf8) lemmasRaw)
+  print lemmasRaw
+  print lemmas
+  let decls = (zipWith (,) lemmasName lemmas)
+  -- case lemmas of
+  --   Right ls -> return (zipWith (,) lemmasName ls)
+  return $ filter (\(n,c) -> n /= "UNDEFINED") $ map (\(n,ty) -> case ty of
+                      (Right c) -> ((TL.unpack . TL.decodeUtf8) n,c)
+                      (Left _) -> ("UNDEFINED", Point)) decls
+
+
+
 buildContext :: String -> Cube -> IO Tele
 buildContext file goal = do
   decls <- mapM (\t -> inferType file t >>= (\ty -> return (t,ty))) (getCFaces goal)
-  return decls
+  lemmasAll <- mapM (\t -> searchLemmas file t) (getCFaces goal)
+  let lemmas = filter (\(n,t) -> t /= goal) $ nub $ concat lemmasAll
+  return $ decls ++ lemmas
 
 
 

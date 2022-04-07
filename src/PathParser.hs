@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module PathParser where
 
 
@@ -48,28 +49,38 @@ parseDim = undefined
 parseBase :: GenParser Char PState Term
 parseBase = do
   face <- ident
-  apps <- many (try (char ' ' >> ident))
+  apps <- many (char ' ' >> ident)
   st <- getState
   return $ foldl (\t i -> App t [[getBind st i]]) (Face face) apps
-  -- return $ Face face
 
 
 parseTerm :: GenParser Char PState Term
-parseTerm = (do {parseAbs ; t <- parseTerm ; return $ Abs t}) <|> parseBase
--- parseTerm = try parseApp <|> (do {parseAbs ; t <- parseTerm ; return $ Abs t}) <|> try parseFace
+parseTerm = between (char '(') (char ')') ((do {parseAbs ; t <- parseTerm ; return $ Abs t}) <|> parseBase)
+ <|> (ident >>= \name -> return $ Face name)
 
 
 
 parsePathP :: GenParser Char PState Cube
 parsePathP = do
-  string "PathP "
+  try $ string "PathP "
   r <- between (char '(') (char ')') (parseAbs >> parsePath)
   char ' '
-  u <- (between (char '(') (char ')') parseTerm) <|> parseTerm
+  u <- parseTerm
   char ' '
-  v <- (between (char '(') (char ')') parseTerm) <|> parseTerm
+  v <- parseTerm
   return $ Path r u v
 
+
+
+parsePathNP :: GenParser Char PState Cube
+parsePathNP = do
+  try $ string "Path "
+  r <- parsePath
+  spaces
+  u <- parseTerm
+  spaces
+  v <- parseTerm
+  return $ Path r u v
 
 parseEq :: GenParser Char PState Cube
 parseEq = do
@@ -86,7 +97,7 @@ parsePoint = do
   return Point
 
 parsePath :: GenParser Char PState Cube
-parsePath = try parsePathP <|> try parseEq <|> parsePoint
+parsePath = parsePathP <|> parsePathNP <|> try parseEq <|> parsePoint
 
 parseCube :: String -> Either ParseError Cube
 -- parseCube input = parse parsePath "" input

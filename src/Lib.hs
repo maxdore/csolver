@@ -138,9 +138,9 @@ infer (Abs t) = do
   -- return $ Path (decDim ty) u v
 infer (App t i) = do
   ty <- infer t
-  case ty of (Path c _ _)
-               -> return $ substC c (dim c + 1) i
-  -- subst 1 in c for i?
+  case ty of
+    (Path c _ _) -> return $ substC c 1 i
+    _ -> throwError "Applied non-path to interval variable"
 
 
 hasType :: Term -> Cube -> Solving s Bool
@@ -196,11 +196,12 @@ fitin (name,x) cdim = return $ map (`absn` cdim) (appn (Face name) (formulas [1 
 getBoundary :: Term -> Int -> Endpoint -> Solving s Term
 getBoundary t i e = do
   ty <- infer t
-  getBoundaryC ty i e 0 -- >>= return . decDimT
+  getBoundaryC ty i e 0 >>= return . decUnbound
 
 getBoundaryC :: Cube -> Int -> Endpoint -> Int -> Solving s Term
 getBoundaryC (Path c u v) i e d = if i == 1
       then if e then return (absn v d) else return (absn u d)
+      -- then if e then return (absn (decDimT v) d) else return (absn (decDimT u) d)
            -- then do
            --   trace $ show v
            --   infer v
@@ -476,8 +477,15 @@ runTest ctxt t i e = do
   case res of
     Left err -> do
       putStrLn $ "ERROR: " ++ err
-    Right (sigma , _)->
+    Right (sigma , _) -> do
       putStrLn $ show sigma
+      res <- runExceptT $ runStateT (infer sigma) (mkSEnv ctxt Point)
+      case res of
+        Left err -> do
+          putStrLn $ "ERROR: " ++ err
+        Right (ty , _)->
+          putStrLn $ show ty
+      
   return res
 
 
