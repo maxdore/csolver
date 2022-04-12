@@ -1,0 +1,30 @@
+λ> cubeSolver Examples/Comp.agda
+CONTEXT
+w : Point
+x : Point
+y : Point
+z : Point
+p : Path Point x w
+q : Path Point x y
+r : Path Point y z
+GOAL
+Path Point w z
+SHAPES
+\1.w : Path Point w w
+\1.x : Path Point x x
+\1.y : Path Point y y
+\1.z : Path Point z z
+\1.(p<[[1]]>) : Path Point x w
+\1.(q<[[1]]>) : Path Point x y
+\1.(r<[[1]]>) : Path Point y z
+NO DIRECT FIT FOUND, SEARCHING FOR HIGHER CUBES
+DOMAINS AFTER APPLYING CONSTRAINTS
+2 : fromList [\1.(q<[[1]]>)]
+0 : fromList [\1.(p<[[1]]>)]
+1 : fromList [\1.(r<[[1]]>)]
+RESULT
+hcomp (λ j → λ {
+ (i = i0) → p j ;
+ (i = i1) → r j })
+  ( q i)
+λ> 

@@ -1,33 +1,58 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import System.IO (hPutStr, hClose)
 import System.Process.Typed
-import System.Exit (ExitCode)
--- import qualified Data.ByteString as Byte
-import qualified Data.ByteString.Lazy as Byte -- (ByteString , drop)
-import qualified Data.ByteString.Lazy.Char8 as ByteC -- (ByteString , drop)
-import qualified Data.ByteString.Lazy.Search as Byte
+import qualified Data.ByteString.Lazy.Char8 as ByteC
 
+import Control.Monad.Except
+import Control.Monad.State
 import System.Environment
-import Data.List
-import Data.HashMap.Strict
--- import qualified Data.List.NonEmpty as NE
-import GHC.Generics
-import Data.String
-import Data.Aeson
-import Data.Aeson.Types
 
-import Lib
+import Data
+import Core
 import AgdaInteractive
+import Examples
 
 
+runSolve :: SEnv s -> IO (Either String (Result,SEnv s))
+runSolve env = do
+  res <- runExceptT $ runStateT solve env
+  case res of
+    Left err -> do
+      putStrLn $ "ERROR: " ++ err
+    Right (r , _)->
+      ByteC.putStrLn $ agdaResult r
+  return res
+
+runInfer :: Tele -> Term -> IO (Either String (Cube,SEnv s))
+runInfer ctxt t = do
+  res <- runExceptT $ runStateT (infer t) (mkSEnv ctxt Point)
+  case res of
+    Left err -> do
+      putStrLn $ "ERROR: " ++ err
+    Right (ty , _)->
+      putStrLn $ show ty
+  return res
+
+runTest :: Tele -> Term -> Int -> Endpoint -> IO (Either String (Term,SEnv s))
+runTest ctxt t i e = do
+  res <- runExceptT $ runStateT (getBoundary t i e) (mkSEnv ctxt Point)
+  case res of
+    Left err -> do
+      putStrLn $ "ERROR: " ++ err
+    Right (sigma , _) -> do
+      putStrLn $ show sigma
+      res <- runExceptT $ runStateT (infer sigma) (mkSEnv ctxt Point)
+      case res of
+        Left err -> do
+          putStrLn $ "ERROR: " ++ err
+        Right (ty , _)->
+          putStrLn $ show ty
+  return res
 
 main :: IO ()
 main = do
   args <- getArgs
-  -- putStrLn "The arguments are:"
-  -- mapM putStrLn args
   let file = args !! 0
 
   goals <- readGoals file

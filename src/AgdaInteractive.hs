@@ -55,6 +55,7 @@ searchLemmas :: String -> Id -> IO [Decl]
 searchLemmas file name = do
   let cmd = "IOTCM \"" ++ file ++ "\" NonInteractive Indirect (Cmd_search_about_toplevel Simplified \"" ++ name ++ "\")"
   (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
+  print out
 
   let lemmasInd = ByteS.indices "\"name\":\"" out
   let lemmasName = map (\i -> ByteS.split "\"" (Byte.drop (i + 8) out) !! 0) lemmasInd
@@ -102,6 +103,7 @@ agdaTerm t = agdaTerm' t 0
 
 agdaResult :: Result -> Byte.ByteString
 agdaResult (Dir t) = agdaTerm t
+agdaResult (Comp t [(u,v)]) = "hcomp (\206\187 j \226\134\146 \206\187 {\n (i = i0) \226\134\146 " <> agdaTerm u <> " j ;\n (i = i1) \226\134\146 " <> agdaTerm v <> " j })\n\ \ \ \ (" <> agdaTerm t <> " i)"
 
 
 -- readGoal :: String -> IO Cube
