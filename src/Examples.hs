@@ -72,22 +72,25 @@ llsq11or2 = Abs (Abs (App (App (Face "sq") [[1]]) [[1],[2]]))
 -- Path (Path (Path Point q<[[1]]> r<[[1]]>) p s) sq sq
 lllsq21 = Abs (Abs (Abs (App (App (Face "sq") [[2]]) [[1]])))
 
+-- sqapp13 : PathP (λ i → PathP (λ j → PathP (λ k → Sq) (p i) (s i)) (λ k → sq k i) λ k → sq k i) (λ _ → q) λ _ → r
+lllsq13 = Abs (Abs (Abs (App (App (Face "sq") [[1]]) [[3]])))
+
 -- Path (λ i → Path (λ j → Path Point (p (i ∨ j)) d) (λ k → sq k (i ∨ k)) r) (λ j k → sq k (j ∨ k)) λ _ → r
 -- Path (Path (Path Point p<[[2],[3]]> d) \1.sq<[[1]]><[[1],[3]]> \1.r<[[1]]>) \2.\1.sq<[[1]]><[[1],[2]]> \2.\1.r<[[1]]>
 lllsqor = (Abs (Abs (Abs (App (App (Face "sq") [[1]]) [[1],[2],[3]]))))
 
 -- SOL \2.\1. sq (2 ∧ 1) 2
-sqands = SEnv sqCtxt (Path (Path Point (App (Face "p") [[1]]) (App (App (Face "sq") [[1]]) [[1]])) (Abs (Face "a")) (Face "r"))
+sqands = mkSEnv sqCtxt (Path (Path Point (App (Face "p") [[1]]) (App (App (Face "sq") [[1]]) [[1]])) (Abs (Face "a")) (Face "r"))
 
 -- SOL \2.\1.sq<2><2>
-sq22 = SEnv sqCtxt (Path (Path Point
+sq22 = mkSEnv sqCtxt (Path (Path Point
                           (App (App (Face "sq") [[1]]) [[1]])
                           (App (App (Face "sq") [[1]]) [[1]]))
                      (Abs (Face "a"))
                      (Abs (Face "d")))
 
 -- SOL \.\.\. sq<2><1>
-sq21 = SEnv sqCtxt (Path (Path (Path Point (App (Face "q") [[1]]) (App (Face "r") [[1]])) (Face "p") (Face "s")) (Face "sq") (Face "sq"))
+sq21 = mkSEnv sqCtxt (Path (Path (Path Point (App (Face "q") [[1]]) (App (Face "r") [[1]])) (Face "p") (Face "s")) (Face "sq") (Face "sq"))
 -- This works??!?
 
 
@@ -103,12 +106,46 @@ ssetCtxt = [
   , ("f" ,      Path Point (Face "x") (Face "y"))
   , ("g" ,      Path Point (Face "y") (Face "z"))
   , ("h" ,      Path Point (Face "x") (Face "z"))
+  -- , ("symh" ,      Path Point (Face "z") (Face "x"))
   , ("phi" , Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
+  -- , ("flipphi" , Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
            ]
 
-lowerT = mkSEnv ssetCtxt (Path (Path Point (App (Face "f") [[1]]) (App (Face "h") [[1]])) (Abs (Face "x")) (Abs (App (Face "g") [[1]])))
+phi = mkSEnv ssetCtxt (Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
+
+-- SOL \2.\1.phi (1 ∨ 2) 2
+phior = mkSEnv ssetCtxt (Path (Path Point (App (App (Face "phi") [[1]]) [[1]]) (Face "z")) (Face "h") (Abs (Face "z")))
+
+-- SOL \2.\1. phi (1 ∨ 2) etaequiv \3.\2.\1. phi (2 ∨ 3) 1
+phipart = mkSEnv ssetCtxt (Path
+                            (Path
+                              (Path Point
+                               (App (Face "h") [[1],[2]])
+                               (App (Face "g") [[1],[2]]))
+                             (Abs (App (App (Face "phi") [[2]]) [[1]]))
+                             (Abs (Face "z")))
+                           (Face "phi")
+                           (Abs (Abs (Face "z"))))
+
+    -- test4 : PathP (λ i → PathP (λ j → Path Δ∣ X ∣ (edge h (i ∨ j)) (edge g (i ∨ j))) (λ j → triangle ϕ i j) λ _ → vert z) (triangle ϕ) λ _ _ → vert z
+    -- test4 = λ i j → triangle ϕ (i ∨ j)
+
+lowerT = mkSEnv ssetCtxt (Path (Path Point (App (Face "f") [[1]]) (App (Face "h") [[1]])) (Abs (Face "x")) (Face "g"))
 
 
+fctCtxt :: Tele
+fctCtxt = [
+    ("x" , Point)
+  , ("y" , Point)
+  , ("z" , Point)
+  , ("f" , Path Point (Face "x") (Face "y"))
+  , ("g" , Path Point (Face "x") (Face "z"))
+  , ("h" , Path Point (Face "y") (Face "z"))
+  , ("alpha" , Path (Path Point (Face "x") (App (Face "h") [[1]])) (Face "f") (Face "g"))
+               ]
+
+coh2 = mkSEnv fctCtxt (Path (Path Point (App (Face "f") [[1]]) (Face "z")) (Face "g") (Face "h"))
+-- PathP (λ i → link x y i ≡ f z) (link x z) (link y z)
 
 
 
@@ -143,6 +180,7 @@ compGoal = mkSEnv compCtxt (Path Point (Face "w") (Face "z"))
 -- x    : A   (not in scope)
 -- w    : A   (not in scope)
 -- A  : Set (not in scope)
+
 
 
 

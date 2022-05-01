@@ -82,28 +82,39 @@ buildContext file goal = do
 
 
 
-varNames = ["i","j","k","l","m","n"]
+dimNames = ["i","j","k","l","m","n"]
+
 
 agdaDim :: Dim -> Int -> Byte.ByteString
 agdaDim (c:[]) d = agdaClause c d
 agdaDim (c:c':cs) d = "(" <> (agdaClause c d) <> ") OR " <> agdaDim (c' : cs) d
 
 agdaClause :: [Int] -> Int -> Byte.ByteString
-agdaClause (i:[]) d = varNames !! (i-d)
-agdaClause (i:j:is) d = (varNames !! (i-d)) <> " AND " <> agdaClause (j:is) d
+agdaClause (i:[]) d = dimNames !! (d-i)
+agdaClause (i:j:is) d = (dimNames !! (d-i)) <> " AND " <> agdaClause (j:is) d
 
-agdaTerm :: Term -> Byte.ByteString
-agdaTerm t = agdaTerm' t 0
-  where
-  agdaTerm' (Face name) d = fromString name
-  agdaTerm' (Abs t) d = "\206\187 " <> (varNames !! d) <> " \226\134\146 " <> agdaTerm' t (d + 1)
-  -- agdaTerm' (Abs t) d = "\955 " <> (varNames !! d) <> " \8594 " <> agdaTerm' t (d + 1)
-  agdaTerm' (App t r) d = agdaTerm' t d <> " " <> agdaDim r d
+-- agdaTerm :: Term -> Byte.ByteString
+-- agdaTerm t = agdaTerm' t 0
+--   where
+--   agdaTerm' (Face name) d = fromString name
+--   agdaTerm' (Abs t) d = "\206\187 " <> (dimNames !! d) <> " \226\134\146 " <> agdaTerm' t (d + 1)
+--   agdaTerm' (App t r) d = agdaTerm' t d <> " (" <> agdaDim r d <> ")"
+
+agdaTerm (Face name) d = fromString name
+agdaTerm (App t r) d = agdaTerm t d <> " (" <> agdaDim r d <> ")"
 
 
 agdaResult :: Result -> Byte.ByteString
-agdaResult (Dir t) = agdaTerm t
-agdaResult (Comp t [(u,v)]) = "hcomp (\206\187 j \226\134\146 \206\187 {\n (i = i0) \226\134\146 " <> agdaTerm u <> " j ;\n (i = i1) \226\134\146 " <> agdaTerm v <> " j })\n\ \ \ \ (" <> agdaTerm t <> " i)"
+agdaResult (Dir t) = let (n , t') = unpeelAbs t in agdaAbs n <> agdaTerm t' n
+agdaResult (Comp t [(u,v)]) = let
+   (n , t') = unpeelAbs t
+   (_ , u') = unpeelAbs u
+   (_ , v') = unpeelAbs v in
+     agdaAbs n <> "hcomp (\206\187 j \226\134\146 \206\187 {\n (i = i0) \226\134\146 " <> agdaTerm u' (n + 1) <> ";\n (i = i1) \226\134\146 " <> agdaTerm v' (n + 1) <> "})\n\ \ \ \ (" <> agdaTerm t' (n + 1) <> ")"
+
+agdaAbs :: Int -> Byte.ByteString
+agdaAbs n = "\206\187" <> ((Byte.concat (map (\i -> " " <> (dimNames !! (i-1))) [1 .. n]))) <> " \226\134\146 "
+
 
 
 -- readGoal :: String -> IO Cube

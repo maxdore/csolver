@@ -9,10 +9,12 @@ type Id = String
 
 type Endpoint = Bool
 
-type Dim = [[Int]]
+type Var = Int
 
-data Term = Face Id | Abs Term | App Term Dim -- | Hole Int
-  deriving (Eq)
+type Dim = [[Var]]
+
+data Term = Face Id | Abs Term | App Term Dim
+  deriving (Eq , Show)
 
 data Cube = Path Cube Term Term | Point
   deriving (Eq , Show)
@@ -22,25 +24,26 @@ type Tele   = [Decl]
 
 
 data Result = Dir Term | Comp Term [(Term,Term)]
-  deriving (Show)
+  deriving (Eq, Show)
 
 -- instance Eq Term where
---     Abs (App u [[1]]) == v = u == v
---     -- Abs (Abs (App (App u [[2]]) [[1]])) == v = u == v
---     -- TODO GENERALIZE
---     (Abs u) == (Abs v) = u == v
---     (App u i) == (App v j) = u == v && i == j
---     (Face m) == (Face n) = m == n
---     _ == _ = False
+--   u == v = (normalize u) == (normalize v)
+  -- Abs (App u [[1]]) == v = u == v
+  -- Abs (Abs (App (App u [[2]]) [[1]])) == v = u == v
+  -- -- TODO GENERALIZE
+  -- (Abs u) == (Abs v) = u == v
+  -- (App u i) == (App v j) = u == v && i == j
+  -- (Face m) == (Face n) = m == n
+  -- _ == _ = False
 
 -- TODO pretty print disjunctive normal forms
 -- instance Show Dim where
 --   show [] = ""
 
-instance Show Term where
-  show (Face name) = name
-  show (Abs u) = "\\" ++ show (depth u + 1) ++ "." ++ show u
-  show (App u i) = "(" ++ show u ++ "<" ++ show i ++ ">)"
+-- instance Show Term where
+--   show (Face name) = name
+--   show (Abs u) = "\\" ++ show (depth u + 1) ++ "." ++ show u
+--   show (App u i) = "(" ++ show u ++ "<" ++ show i ++ ">)"
 
 
 instance Ord Term where
@@ -91,14 +94,67 @@ depth (Abs t) = 1 + depth t
 depth (App t i) = 0
 
 
+varOccurs :: Int -> Term -> Bool
+varOccurs i (Face name) = False
+varOccurs i (Abs t) = varOccurs i t
+varOccurs i (App t r) = varOccurs i t || i `elem` concat r
+
+
+subst :: Term -> Int -> Dim -> Term
+subst (Face name) i r = Face name
+subst (Abs t) i r = Abs (subst t i r)
+subst (App t s) i r = App (subst t i r) (subst' s i r)
+  where
+  subst' :: Dim -> Int -> Dim -> Dim
+  subst' s i r = redDnf $ concat $ map (\c -> if i `elem` c
+                                 then map (++ delete i c) r
+                                 else [c]
+                                  ) s
+
+
+substC :: Cube -> Int -> Dim -> Cube
+substC Point _ _ = Point
+substC (Path c u v) i r = Path (substC c i r) (subst u i r) (subst v i r)
+
+
+normalize :: Term -> Term
+normalize (Face name) = Face name
+-- eta reductions
+normalize (Abs (App t [[1]])) = if varOccurs 1 t
+  then Abs (App (normalize t) [[1]])
+  else normalize (decDimT t)
+normalize (Abs (Abs (App (App t [[2]]) [[1]]))) = if varOccurs 1 t || varOccurs 2 t
+    then (Abs (Abs (App (App (normalize t) [[2]]) [[1]])))
+    else normalize (decDimT (decDimT t))
+-- TODO GENERALIZE
+-- beta reductions
+normalize (App (Abs t) r) = normalize (subst t 1 r)
+normalize (Abs t) = Abs (normalize t)
+normalize t = t
+
+
+normalizeC :: Cube -> Cube
+normalizeC Point = Point
+normalizeC (Path c u v) = Path (normalizeC c) (normalize u) (normalize v)
+
+
+
 -- TODO use these functions to fix the index mess?
 decDimT :: Term -> Term
 decDimT (Face name) = Face name
 decDimT (Abs t) = Abs (decDimT t)
 decDimT (App t dim) = App (decDimT t) (map (map (\i -> i-1)) dim)
+
 decDim :: Cube -> Cube
 decDim Point = Point
 decDim (Path c u v) = Path (decDim c) (decDimT u) (decDimT v)
+
+
+decDimC :: Cube -> Cube
+decDimC Point = Point
+decDimC (Path Point u v) = Path Point (decUnbound u) (decUnbound v)
+decDimC (Path c u v) = Path (decDimC c) (iterate decUnbound u !! dim c) (iterate decUnbound v !! dim c)
+
 
 
 decUnbound :: Term -> Term
@@ -141,3 +197,7 @@ getCFaces (Path c u v) = nub $ getCFaces c ++ [ getTFace u , getTFace v ]
 
 
 
+unpeelAbs :: Term -> (Int, Term)
+unpeelAbs (Face name) = (0, Face name)
+unpeelAbs (Abs t) = let (n , t') = unpeelAbs t in (n+1, t')
+unpeelAbs (App t r) = (0, App t r)

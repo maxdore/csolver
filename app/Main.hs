@@ -20,7 +20,8 @@ runSolve env = do
   case res of
     Left err -> do
       putStrLn $ "ERROR: " ++ err
-    Right (r , _)->
+    Right (r , _)-> do
+      print r
       ByteC.putStrLn $ agdaResult r
   return res
 
@@ -63,7 +64,6 @@ main = do
            case s of
              Left err -> undefined
              Right (res , _) -> ByteC.putStrLn $ agdaResult res
-           print ""
            ) goals
 
   print "Success"
