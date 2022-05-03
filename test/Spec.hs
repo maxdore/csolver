@@ -72,5 +72,9 @@ main = do
     (Path Point (Face "w") (Face "z"))
     (Comp (Abs (App (Face "q") [[1]])) [(Abs (App (Face "p") [[1]]),Abs (App (Face "r") [[1]]))])
 
+  checkSolver fctCtxt
+    (Path (Path Point (App (Face "f") [[1]]) (Face "z")) (Face "g") (Face "h"))
+    (Comp (Abs (Abs (App (App (Face "alpha") [[1]]) [[2]]))) [(Abs (Abs (App (Face "g") [[1,2]])),Abs (Abs (App (Face "h") [[2]]))),(Abs (Abs (App (Face "f") [[2]])),Abs (Abs (App (Face "g") [[1],[2]])))])
+
 
   return ()

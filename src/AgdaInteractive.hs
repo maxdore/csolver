@@ -106,11 +106,27 @@ agdaTerm (App t r) d = agdaTerm t d <> " (" <> agdaDim r d <> ")"
 
 agdaResult :: Result -> Byte.ByteString
 agdaResult (Dir t) = let (n , t') = unpeelAbs t in agdaAbs n <> agdaTerm t' n
-agdaResult (Comp t [(u,v)]) = let
-   (n , t') = unpeelAbs t
-   (_ , u') = unpeelAbs u
-   (_ , v') = unpeelAbs v in
-     agdaAbs n <> "hcomp (\206\187 j \226\134\146 \206\187 {\n (i = i0) \226\134\146 " <> agdaTerm u' (n + 1) <> ";\n (i = i1) \226\134\146 " <> agdaTerm v' (n + 1) <> "})\n\ \ \ \ (" <> agdaTerm t' (n + 1) <> ")"
+agdaResult (Comp b sides) = let
+   (n , b') = unpeelAbs b
+   sides' = zip (map (\(zero,one) -> ((snd . unpeelAbs) zero , (snd . unpeelAbs) one)) sides) dimNames
+   in
+    agdaAbs n <> "hcomp (\206\187 " <> (dimNames !! n) <> " \226\134\146 \206\187 {\n"
+              <> Byte.concat (map (\((zero,one),dim) ->
+                                     " ; (" <> dim <> " = i0) \226\134\146 " <> agdaTerm zero (n + 1) <> "\n" <>
+                                     " ; (" <> dim <> " = i1) \226\134\146 " <> agdaTerm one (n + 1) <> "\n"
+                                  ) sides')
+              <> "}) (" <> agdaTerm b' n <> ")"
+
+    -- agdaAbs n <> "hcomp (\206\187 j \226\134\146 \206\187 {\n\
+    --             \ ; (i = i0) \226\134\146 " <> agdaTerm b' (n + 1) <> " \n\
+    --             \ ; (i = i1) \226\134\146 " <> agdaTerm b' (n + 1) <> " \
+    --             \ })\n (" <> agdaTerm b' (n + 1) <> ")"
+  
+-- agdaResult (Comp t [(u,v)]) = let
+--    (n , t') = unpeelAbs t
+--    (_ , u') = unpeelAbs u
+--    (_ , v') = unpeelAbs v in
+--      agdaAbs n <> "hcomp (\206\187 j \226\134\146 \206\187 {\n (i = i0) \226\134\146 " <> agdaTerm u' (n + 1) <> ";\n (i = i1) \226\134\146 " <> agdaTerm v' (n + 1) <> "})\n\ \ \ \ (" <> agdaTerm t' (n + 1) <> ")"
 
 agdaAbs :: Int -> Byte.ByteString
 agdaAbs n = "\206\187" <> ((Byte.concat (map (\i -> " " <> (dimNames !! (i-1))) [1 .. n]))) <> " \226\134\146 "

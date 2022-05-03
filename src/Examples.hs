@@ -145,7 +145,7 @@ fctCtxt = [
                ]
 
 coh2 = mkSEnv fctCtxt (Path (Path Point (App (Face "f") [[1]]) (Face "z")) (Face "g") (Face "h"))
--- PathP (λ i → link x y i ≡ f z) (link x z) (link y z)
+coh3 = mkSEnv fctCtxt (Path (Path Point (App (Face "f") [[1]]) (Face "z")) (Face "h") (Face "h"))
 
 
 
