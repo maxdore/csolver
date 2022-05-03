@@ -234,18 +234,6 @@ addBinaryConstraint f x y = do
 
 
 
--- endpoints :: Endpoint -> Endpoint -> Int -> Int -> Solving s ()
--- endpoints i j = addBinaryConstraint $ \x y -> do
---     xv <- lookupDom x
---     yv <- lookupDom y
---     xv' <- filterM (\x' -> anyM (\y' -> endpointsAgree x' i y' j) (Set.toList yv)) (Set.toList xv)
---     yv' <- filterM (\y' -> anyM (\x' -> endpointsAgree x' i y' j) (Set.toList xv)) (Set.toList yv)
---     guard $ not $ Set.null (Set.fromList xv')
---     guard $ not $ Set.null (Set.fromList yv')
---     when (xv' /= Set.toList xv) $ update x (Set.fromList xv')
---     when (yv' /= Set.toList yv) $ update y (Set.fromList yv')
-
-
 boundaries :: Var -> Endpoint -> Var -> Endpoint -> Int -> Int -> Solving s ()
 boundaries i e j e' = addBinaryConstraint $ \x y -> do
     xv <- lookupDom x
@@ -334,10 +322,10 @@ comp c shapes = do
   -- mapM (\i -> mapM (\j -> boundaries j False i False (sides0 !! (i-1)) (sides0 !! (j-1))) [(i + 1) .. dim c]) dims
 
 
-  mapM (\i -> mapM (\j -> boundaries 2 False 1 False (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries 1 False 1 True (sides1 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries 2 True 2 False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries 1 True 2 True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
+  mapM (\i -> mapM (\j -> boundaries 1 False 2 False (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
+  mapM (\i -> mapM (\j -> boundaries 2 False 2 True (sides1 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
+  mapM (\i -> mapM (\j -> boundaries 1 True 1 False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
+  mapM (\i -> mapM (\j -> boundaries 2 True 1 True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
 
 
   trace "DOMAINS AFTER SIDE CONSTRAINTS"

@@ -133,6 +133,27 @@ phipart = mkSEnv ssetCtxt (Path
 lowerT = mkSEnv ssetCtxt (Path (Path Point (App (Face "f") [[1]]) (App (Face "h") [[1]])) (Abs (Face "x")) (Face "g"))
 
 
+
+
+
+
+sset2Ctxt :: Tele
+sset2Ctxt = [
+    ("x" ,     Point)
+  , ("y" ,     Point)
+  , ("z" ,     Point)
+  , ("f" ,      Path Point (Face "x") (Face "y"))
+  , ("g" ,      Path Point (Face "y") (Face "z"))
+  , ("h" ,      Path Point (Face "x") (Face "z"))
+  , ("phi" , (Path (Path Point (App (Face "f") [[1]]) (App (Face "h") [[1]])) (Abs (Face "x")) (Face "g")))
+           ]
+
+upperT = mkSEnv sset2Ctxt (Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
+
+
+
+
+
 fctCtxt :: Tele
 fctCtxt = [
     ("x" , Point)
