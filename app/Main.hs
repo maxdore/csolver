@@ -14,15 +14,14 @@ import AgdaInteractive
 import Examples
 
 
-runSolve :: SEnv s -> IO (Either String (Result,SEnv s))
+runSolve :: SEnv s -> IO (Either String ([Result],SEnv s))
 runSolve env = do
   res <- runExceptT $ runStateT solve env
   case res of
     Left err -> do
       putStrLn $ "ERROR: " ++ err
-    Right (r , _)-> do
-      print r
-      ByteC.putStrLn $ agdaResult r
+    Right (rs , _)-> do
+      (ByteC.putStrLn . agdaResult) (rs !! 0)
   return res
 
 runInfer :: Tele -> Term -> IO (Either String (Cube,SEnv s))
@@ -63,7 +62,7 @@ main = do
            s <- runSolve $ mkSEnv ctxt g
            case s of
              Left err -> undefined
-             Right (res , _) -> ByteC.putStrLn $ agdaResult res
+             Right (rs , _) -> ByteC.putStrLn $ agdaResult (rs !! 0)
            ) goals
 
   print "Success"

@@ -12,11 +12,11 @@ import Examples
 
 checkSolver :: [Decl] -> Cube -> Result -> IO ()
 checkSolver ctxt goal t = do
-  res <- runExceptT $ runStateT solve (SEnv ctxt goal 0 Map.empty False)
+  res <- runExceptT $ runStateT solve (SEnv ctxt goal 0 Map.empty False False)
   case res of
     Left err -> do
       putStrLn $ "FAIL!" ++ err
-    Right (r , _)-> do
+    Right ([r] , _)-> do
       -- TODO WHY IS show COMPARISON NECESSARY????
       putStrLn $ if (show r == show t) then "OK" else "FAIL! GOAL\n" ++ show goal ++ "\n" ++ show r ++ "\nIS PRESENTED, BUT SHOULD BE\n" ++ show t
 
@@ -56,6 +56,10 @@ main = do
     (Dir (Abs (Abs (App (App (Face "phi") [[2]]) [[1]]))))
 
   checkSolver ssetCtxt
+    (Path (Path Point (App (App (Face "phi") [[1]]) [[1]]) (Face "z")) (Face "h") (Abs (Face "z")))
+    (Dir (Abs (Abs (App (App (Face "phi") [[1],[2]]) [[2]]))))
+
+  checkSolver ssetCtxt
     (Path (Path (Path Point (App (Face "h") [[1],[2]]) (App (Face "g") [[1],[2]]))
                             (Abs (App (App (Face "phi") [[2]]) [[1]])) (Abs (Face "z")))
                             (Face "phi") (Abs (Abs (Face "z"))))
@@ -76,5 +80,8 @@ main = do
     (Path (Path Point (App (Face "f") [[1]]) (Face "z")) (Face "g") (Face "h"))
     (Comp (Abs (Abs (App (App (Face "alpha") [[1]]) [[2]]))) [(Abs (Abs (App (Face "g") [[1,2]])),Abs (Abs (App (Face "h") [[2]]))),(Abs (Abs (App (Face "f") [[2]])),Abs (Abs (App (Face "g") [[1],[2]])))])
 
+  checkSolver sset2Ctxt
+    (Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
+    (Comp (Abs (Abs (App (App (Face "phi") [[1]]) [[2]]))) [(Abs (Abs (App (Face "f") [[2]])),Abs (Abs (App (Face "h") [[1],[2]]))),(Abs (Abs (App (Face "h") [[1,2]])),Abs (Abs (App (Face "g") [[2]])))])
 
   return ()
