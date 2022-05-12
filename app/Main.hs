@@ -14,9 +14,9 @@ import AgdaInteractive
 import Examples
 
 
-runSolve :: SEnv s -> IO (Either String ([Result],SEnv s))
+runSolve :: (Bool -> SEnv s) -> IO (Either String ([Result],SEnv s))
 runSolve env = do
-  res <- runExceptT $ runStateT solve env
+  res <- runExceptT $ runStateT solve (env False)
   case res of
     Left err -> do
       putStrLn $ "ERROR: " ++ err
@@ -24,9 +24,28 @@ runSolve env = do
       (ByteC.putStrLn . agdaResult) (rs !! 0)
   return res
 
+
+runSolve2 :: (Bool -> SEnv s) -> IO (Either String ([Result],SEnv s))
+runSolve2 env = do
+  -- res1 <- runExceptT $ runStateT solve (env False)
+  res2 <- runExceptT $ runStateT solve (env True)
+  -- case res1 of
+  --   Left err -> do
+  --     putStrLn $ "ERROR: " ++ err
+  --   Right (r1 , _)-> do
+  --     (ByteC.putStrLn . agdaResult) (r1 !! 0)
+  case res2 of
+    Left err -> do
+      putStrLn $ "ERROR: " ++ err
+    Right (r2 , _)-> do
+      (ByteC.putStrLn . agdaResult) (r2 !! 0)
+  -- return $ res1 ++ res2
+  return $ Left ""
+
+
 runInfer :: Tele -> Term -> IO (Either String (Cube,SEnv s))
 runInfer ctxt t = do
-  res <- runExceptT $ runStateT (infer t) (mkSEnv ctxt Point)
+  res <- runExceptT $ runStateT (infer t) (mkSEnv ctxt Point False)
   case res of
     Left err -> do
       putStrLn $ "ERROR: " ++ err
@@ -36,13 +55,13 @@ runInfer ctxt t = do
 
 runTest :: Tele -> Term -> Int -> Endpoint -> IO (Either String (Term,SEnv s))
 runTest ctxt t i e = do
-  res <- runExceptT $ runStateT (getBoundary t i e) (mkSEnv ctxt Point)
+  res <- runExceptT $ runStateT (getBoundary t i e) (mkSEnv ctxt Point False)
   case res of
     Left err -> do
       putStrLn $ "ERROR: " ++ err
     Right (sigma , _) -> do
       putStrLn $ show sigma
-      res <- runExceptT $ runStateT (infer sigma) (mkSEnv ctxt Point)
+      res <- runExceptT $ runStateT (infer sigma) (mkSEnv ctxt Point False)
       case res of
         Left err -> do
           putStrLn $ "ERROR: " ++ err
@@ -50,19 +69,21 @@ runTest ctxt t i e = do
           putStrLn $ show ty
   return res
 
-main :: IO ()
-main = do
-  args <- getArgs
-  let file = args !! 0
+main = return ()
 
-  goals <- readGoals file
+-- main :: IO ()
+-- main = do
+--   args <- getArgs
+--   let file = args !! 0
 
-  mapM (\g -> do
-           ctxt <- buildContext file g
-           s <- runSolve $ mkSEnv ctxt g
-           case s of
-             Left err -> undefined
-             Right (rs , _) -> ByteC.putStrLn $ agdaResult (rs !! 0)
-           ) goals
+--   goals <- readGoals file
 
-  print "Success"
+--   mapM (\g -> do
+--            ctxt <- buildContext file g
+--            s <- runSolve $ mkSEnv ctxt g False
+--            case s of
+--              Left err -> undefined
+--              Right (rs , _) -> ByteC.putStrLn $ agdaResult (rs !! 0)
+--            ) goals
+
+--   print "Success"

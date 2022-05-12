@@ -26,7 +26,7 @@ data SEnv s =
        , allSol :: Bool
        }
 
-mkSEnv ctxt goal = SEnv ctxt goal 0 Map.empty True False
+mkSEnv ctxt goal = SEnv ctxt goal 0 Map.empty True -- False
 
 data VarInfo a = VarInfo { delayedConstraints :: Solving a (), values :: Set Term }
 type VarMap a = Map Int (VarInfo a)
@@ -262,10 +262,28 @@ oneSolution = mapM label where
     label var = do
         vals <- lookupDom var
         trace $ show var ++ " : " ++ show vals
-        let val = (Set.toList vals) !! 0
+
+        -- let ind = if (length (Set.toList vals) > 1) then 1 else 0
+        -- let val = (Set.toList vals) !! ind
+        -- var `hasValue` val
+        -- return val
+  
+        sndSol <- gets allSol
+        if sndSol && length (Set.toList vals) > 1
+          then do
+                trace "GETTING SECONDS"
+                -- s <- get
+                -- put $ s { allSol = False }
+                let val = (Set.toList vals) !! 1
+                var `hasValue` val
+                return val
+          else do
+                trace "GETTING FIRSTS"
+                let val = (Set.toList vals) !! 0
+                var `hasValue` val
+                return val
+
         -- val <- Solving . lift $ Set.toList vals
-        var `hasValue` val
-        return val
 
 
 allSolutions :: [Int] -> Solving s [[Term]]
@@ -330,10 +348,10 @@ comp c shapes = do
   -- mapM (\i -> mapM (\j -> boundaries i True j False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
   -- mapM (\i -> mapM (\j -> boundaries i True j True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
 
-  mapM (\i -> mapM (\j -> boundaries i False j False (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries j False j True (sides1 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries i True i False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries j True i True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
+  mapM (\i -> mapM (\j -> boundaries 1 False 2 False (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
+  mapM (\i -> mapM (\j -> boundaries 2 False 2 True (sides1 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
+  mapM (\i -> mapM (\j -> boundaries 1 True 1 False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
+  mapM (\i -> mapM (\j -> boundaries 2 True 1 True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
 
   trace "DOMAINS AFTER SIDE CONSTRAINTS"
   lookupDom back >>= trace . show
@@ -342,7 +360,7 @@ comp c shapes = do
 
 
   isAll <- gets allSol
-  if isAll
+  if False -- isAll
     then do
       res <- allSolutions (back : sides0 ++ sides1)
       return (map (\r -> Comp (r !! 0) (map (\i -> (r !! i , r !! (dim c + i))) dims)) res)
