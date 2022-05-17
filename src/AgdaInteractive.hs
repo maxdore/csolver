@@ -18,21 +18,21 @@ import Data
 import PathParser
 
 
+-- parseEmacs :: String -> Byte.ByteString -> Byte.ByteString -> IO [String]
+parseEmacs cmd pre post = do
+  (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction"
+  print out
 
+  let goalInd = ByteS.indices pre out
+  let goalsRaw = map (\i -> ByteS.split post (Byte.drop (i + (Byte.length (Byte.fromStrict pre))) out) !! 0) goalInd
+
+  return $ map (TL.unpack . TL.decodeUtf8) goalsRaw
 
 
 readGoals :: String -> IO [Cube]
 readGoals file = do
-  let cmd = "IOTCM \"" ++ file ++ "\" None Indirect (Cmd_load \"" ++ file ++ "\" [])"
-  (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
-  print out
-
-  let goalInd = ByteS.indices "\"type\":\"" out
-  let goalsRaw = map (\i -> ByteS.split "\"" (Byte.drop (i + 8) out) !! 0) goalInd
-
-  print $ (TL.unpack . TL.decodeUtf8) (goalsRaw !! 0)
-
-  let goals = sequence (map  (parseCube . TL.unpack . TL.decodeUtf8) goalsRaw)
+  goalsRaw <- parseEmacs ("IOTCM \"" ++ file ++ "\" None Indirect (Cmd_load \"" ++ file ++ "\" [])") "\"?0 : " "\\n"
+  let goals = sequence (map parseCube goalsRaw)
   print goals
   case goals of
     Right gs -> return gs
@@ -41,23 +41,27 @@ readGoals file = do
 
 inferType :: String -> Id -> IO Cube
 inferType file name = do
-  let cmd = "IOTCM \"" ++ file ++ "\" None Indirect (Cmd_infer_toplevel Simplified \"" ++ name ++ "\")"
-  (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
-  print out
-  let tyRaw = ByteS.split "\"" (Byte.drop ((ByteS.indices "\"expr\":\"" out) !! 0 + 8) out) !! 0
-  print tyRaw
-  let ty = (parseCube . TL.unpack . TL.decodeUtf8) tyRaw
+  typesRaw <- parseEmacs ("IOTCM \"" ++ file ++ "\" None Indirect (Cmd_infer_toplevel Simplified \"" ++ name ++ "\")") "*Inferred Type*\" \"" "\" nil"
+  let ty = parseCube (typesRaw !! 0)
   print ty
   case ty of
     Right t -> return t
 
+  -- let cmd = 
+  -- (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction"
+  -- print out
+  -- let tyRaw = ByteS.split "\"" (Byte.drop ((ByteS.indices "\"expr\":\"" out) !! 0 + 8) out) !! 0
+  -- print tyRaw
+  -- let ty = (parseCube . TL.unpack . TL.decodeUtf8) tyRaw
+  -- print ty
+
 searchLemmas :: String -> Id -> IO [Decl]
 searchLemmas file name = do
   let cmd = "IOTCM \"" ++ file ++ "\" NonInteractive Indirect (Cmd_search_about_toplevel Simplified \"" ++ name ++ "\")"
-  (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
+  (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction"
   print out
 
-  let lemmasInd = ByteS.indices "\"name\":\"" out
+  let lemmasInd = ByteS.indices ("\\n  ") out
   let lemmasName = map (\i -> ByteS.split "\"" (Byte.drop (i + 8) out) !! 0) lemmasInd
   let lemmasRaw = map (\k -> ByteS.split "\"" (Byte.drop ((lemmasInd !! k) + (Byte.length (lemmasName !! k)) + 18) out) !! 0) [0 .. (length lemmasInd)-1]
 
@@ -73,6 +77,8 @@ searchLemmas file name = do
 
 
 
+
+
 buildContext :: String -> Cube -> IO Tele
 buildContext file goal = do
   decls <- mapM (\t -> inferType file t >>= (\ty -> return (t,ty))) (getCFaces goal)
@@ -85,13 +91,13 @@ buildContext file goal = do
 dimNames = ["i","j","k","l","m","n"]
 
 
-agdaDim :: Dim -> Int -> Byte.ByteString
-agdaDim (c:[]) d = agdaClause c d
-agdaDim (c:c':cs) d = "(" <> (agdaClause c d) <> ") OR " <> agdaDim (c' : cs) d
+agdaDim :: Dim -> Int -> Int -> Byte.ByteString
+agdaDim (c:[]) d s = agdaClause c d s
+agdaDim (c:c':cs) d s = "(" <> (agdaClause c d s) <> ") OR " <> agdaDim (c' : cs) d s
 
-agdaClause :: [Int] -> Int -> Byte.ByteString
-agdaClause (i:[]) d = dimNames !! (d-i)
-agdaClause (i:j:is) d = (dimNames !! (d-i)) <> " AND " <> agdaClause (j:is) d
+agdaClause :: [Int] -> Int -> Int -> Byte.ByteString
+agdaClause (i:[]) d s = dimNames !! (if d-i == s then (d-i + 1) else (d-i))
+agdaClause (i:j:is) d s = (dimNames !! (d-i)) <> " AND " <> agdaClause (j:is) d s
 
 -- agdaTerm :: Term -> Byte.ByteString
 -- agdaTerm t = agdaTerm' t 0
@@ -100,20 +106,20 @@ agdaClause (i:j:is) d = (dimNames !! (d-i)) <> " AND " <> agdaClause (j:is) d
 --   agdaTerm' (Abs t) d = "\206\187 " <> (dimNames !! d) <> " \226\134\146 " <> agdaTerm' t (d + 1)
 --   agdaTerm' (App t r) d = agdaTerm' t d <> " (" <> agdaDim r d <> ")"
 
-agdaTerm (Face name) d = fromString name
-agdaTerm (App t r) d = agdaTerm t d <> " (" <> agdaDim r d <> ")"
+agdaTerm (Face name) d s = fromString name
+agdaTerm (App t r) d s = agdaTerm t d s <> " (" <> agdaDim r d s <> ")"
 
 
 agdaResult :: Result -> Byte.ByteString
-agdaResult (Dir t) = let (n , t') = unpeelAbs t in agdaAbs n <> agdaTerm t' n
+agdaResult (Dir t) = let (n , t') = unpeelAbs t in agdaAbs n <> agdaTerm t' n 0
 agdaResult (Comp b sides) = let
    (n , b') = unpeelAbs b
    sides' = zip (map (\(zero,one) -> ((snd . unpeelAbs) zero , (snd . unpeelAbs) one)) sides) dimNames
    in
     agdaAbs n <> "hcomp (\206\187 " <> (dimNames !! n) <> " \226\134\146 \206\187 {\n"
               <> Byte.concat (map (\((zero,one),dim) ->
-                                     " ; (" <> dim <> " = i0) \226\134\146 " <> agdaTerm zero (n + 1) <> "\n" <>
-                                     " ; (" <> dim <> " = i1) \226\134\146 " <> agdaTerm one (n + 1) <> "\n"
+                                     " ; (" <> dim <> " = i0) \226\134\146 " <> agdaTerm zero n dim <> "\n" <>
+                                     " ; (" <> dim <> " = i1) \226\134\146 " <> agdaTerm one n dim <> "\n"
                                   ) sides')
               <> "}) (" <> agdaTerm b' n <> ")"
 
@@ -187,3 +193,56 @@ agdaAbs n = "\206\187" <> ((Byte.concat (map (\i -> " " <> (dimNames !! (i-1))) 
 
     -- {\"kind\":\"InteractionPoints\",\"interactionPoints\":[{\"id\":0,\"range\":[{\"start\":{\"col\":8,\"line\":38,\"pos\":940},\"end\":{\"col\":15,\"line\":38,\"pos\":947}}]}]}
 
+
+
+-- WITH JSON
+
+--   readGoals :: String -> IO [Cube]
+-- readGoals file = do
+--   let cmd = "IOTCM \"" ++ file ++ "\" None Indirect (Cmd_load \"" ++ file ++ "\" [])"
+--   (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
+--   print out
+
+--   let goalInd = ByteS.indices "\"type\":\"" out
+--   let goalsRaw = map (\i -> ByteS.split "\"" (Byte.drop (i + 8) out) !! 0) goalInd
+
+--   print $ (TL.unpack . TL.decodeUtf8) (goalsRaw !! 0)
+
+--   let goals = sequence (map  (parseCube . TL.unpack . TL.decodeUtf8) goalsRaw)
+--   print goals
+--   case goals of
+--     Right gs -> return gs
+--     -- Left parserr -> print "Could not parse goals in file" >> return [Point]
+
+
+-- inferType :: String -> Id -> IO Cube
+-- inferType file name = do
+--   let cmd = "IOTCM \"" ++ file ++ "\" None Indirect (Cmd_infer_toplevel Simplified \"" ++ name ++ "\")"
+--   (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
+--   print out
+--   let tyRaw = ByteS.split "\"" (Byte.drop ((ByteS.indices "\"expr\":\"" out) !! 0 + 8) out) !! 0
+--   print tyRaw
+--   let ty = (parseCube . TL.unpack . TL.decodeUtf8) tyRaw
+--   print ty
+--   case ty of
+--     Right t -> return t
+
+-- searchLemmas :: String -> Id -> IO [Decl]
+-- searchLemmas file name = do
+--   let cmd = "IOTCM \"" ++ file ++ "\" NonInteractive Indirect (Cmd_search_about_toplevel Simplified \"" ++ name ++ "\")"
+--   (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction-json"
+--   print out
+
+--   let lemmasInd = ByteS.indices "\"name\":\"" out
+--   let lemmasName = map (\i -> ByteS.split "\"" (Byte.drop (i + 8) out) !! 0) lemmasInd
+--   let lemmasRaw = map (\k -> ByteS.split "\"" (Byte.drop ((lemmasInd !! k) + (Byte.length (lemmasName !! k)) + 18) out) !! 0) [0 .. (length lemmasInd)-1]
+
+--   let lemmas = (map  (parseCube . TL.unpack . TL.decodeUtf8) lemmasRaw)
+--   print lemmasRaw
+--   print lemmas
+--   let decls = (zipWith (,) lemmasName lemmas)
+--   -- case lemmas of
+--   --   Right ls -> return (zipWith (,) lemmasName ls)
+--   return $ filter (\(n,c) -> n /= "UNDEFINED") $ map (\(n,ty) -> case ty of
+--                       (Right c) -> ((TL.unpack . TL.decodeUtf8) n,c)
+--                       (Left _) -> ("UNDEFINED", Point)) decls
