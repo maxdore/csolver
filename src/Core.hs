@@ -54,7 +54,7 @@ eval (App t dim) i e = do
   r <- eval t i e
   if e
     then do
-      let ndim = map (delete i) dim
+      let ndim = redDnf $ map (delete i) dim
       if [] `elem` ndim
         then do
           u <- infer' r
@@ -64,7 +64,7 @@ eval (App t dim) i e = do
         else return $ App r ndim
         -- else return r
     else do
-      let ndim = filter (\c -> not (i `elem` c)) dim
+      let ndim = redDnf $ filter (\c -> not (i `elem` c)) dim
       if ndim == []
         then do
           u <- infer' r
@@ -82,6 +82,9 @@ apply (Abs t) = eval t (depth t)
 infer :: Term -> Solving s Cube
 infer t = infer' t >>= return . normalizeC . decDimC
 
+
+-- TODO also normalize formulas after type inference, e.g.,
+-- Abs (Abs (Abs (App (Face "f") [[1,2],[1,3]]))) : Path (Path (Path Point (Face "x") (App (Face "f") [[1],[2]])) (Abs (App (Face "f") [[1,2]])) (Abs (App (Face "f") [[1],[1,2]]))) (Abs (Abs (App (Face "f") [[1,2]]))) (Abs (Abs (App (Face "f") [[1,2],[1]])))
 infer' (Face name) = lookupDef name
 infer' (Abs t) = do
   ty <- infer' t
@@ -113,17 +116,18 @@ evalTy (Path c u v) i e = do
 wellFormedCube :: Cube -> Solving s ()
 wellFormedCube (Point) = return ()
 wellFormedCube (Path c u v) = do
+  return ()
   -- wellFormedCube c TODO
-  let numvars = dim c
-  c0 <- evalTy c 1 False -- >>= return . decDim
-  c1 <- evalTy c 1 True -- >>= return . decDim
-  ut <- infer' u
-  vt <- infer' v
-  if c0 /= ut
-    then throwError $ "BOUNDARY OF " ++ show (Path c u v) ++  "\n" ++ show ut ++ "\nis not\n" ++ show c0
-  else if c1 /= vt
-    then throwError $ "BOUNDARY OF " ++ show (Path c u v) ++  "\n" ++ show vt ++ "\nis not\n" ++ show c1
-    else return ()
+  -- let numvars = dim c
+  -- c0 <- evalTy c 1 False -- >>= return . decDim
+  -- c1 <- evalTy c 1 True -- >>= return . decDim
+  -- ut <- infer' u
+  -- vt <- infer' v
+  -- if c0 /= ut
+  --   then throwError $ "BOUNDARY OF " ++ show (Path c u v) ++  "\n" ++ show ut ++ "\nis not\n" ++ show c0
+  -- else if c1 /= vt
+  --   then throwError $ "BOUNDARY OF " ++ show (Path c u v) ++  "\n" ++ show vt ++ "\nis not\n" ++ show c1
+  --   else return ()
 
 
 
@@ -324,39 +328,30 @@ comp c shapes = do
   back <- newVar shapes
 
   trace "DOMAINS BEFORE CONSTRAINTS"
-  mapM (\s -> lookupDom s >>= trace . show) sides0
-  mapM (\s -> lookupDom s >>= trace . show) sides1
+  mapM (\s -> lookupDom s >>= \d -> trace $ (dimAsString !! s) ++ "0: " ++ show d) sides0
+  mapM (\s -> lookupDom s >>= \d -> trace $ (dimAsString !! (s - dim c)) ++ "1: " ++ show d) sides1
 
   mapM (\i -> boundaries i False (dim c) False back (sides0 !! (i-1))) dims
   mapM (\i -> boundaries i True (dim c) False back (sides1 !! (i-1))) dims
 
   trace "DOMAINS AFTER BACK CONSTRAINTS"
   lookupDom back >>= trace . show
-  mapM (\s -> lookupDom s >>= trace . show) sides0
-  mapM (\s -> lookupDom s >>= trace . show) sides1
+  mapM (\s -> lookupDom s >>= \d -> trace $ (dimAsString !! s) ++ "0: " ++ show d) sides0
+  mapM (\s -> lookupDom s >>= \d -> trace $ (dimAsString !! (s - dim c)) ++ "1: " ++ show d) sides1
 
-  -- let backB = lookupDom back
-  -- let sides0B = mapM lookupDom sides0
-  -- let sides1B = mapM lookupDom sides1
+  mapM (\e -> mapM (\e' -> mapM (\i -> mapM (\j ->
+       boundaries (if e then j else i) e' (if e' then i else j) e ((if e then sides1 else sides0) !! (i-1)) ((if e' then sides1 else sides0) !! (j-1)))
+                                  [i + 1 .. dim c]) dims) [False , True]) [False , True]
 
-  -- mapM (\e -> mapM (\e' -> mapM (\i -> mapM (\j -> boundaries j e i e' (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims) [False , True]) [False , True]
-
-  -- mapM (\i -> mapM (\j -> boundaries j False i False (sides0 !! (i-1)) (sides0 !! (j-1))) [(i + 1) .. dim c]) dims
-
-  -- mapM (\i -> mapM (\j -> boundaries i False j False (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  -- mapM (\i -> mapM (\j -> boundaries i False j True (sides1 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  -- mapM (\i -> mapM (\j -> boundaries i True j False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
-  -- mapM (\i -> mapM (\j -> boundaries i True j True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
-
-  mapM (\i -> mapM (\j -> boundaries 1 False 2 False (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries 2 False 2 True (sides1 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries 1 True 1 False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
-  mapM (\i -> mapM (\j -> boundaries 2 True 1 True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
+  -- mapM (\i -> mapM (\j -> boundaries m False n False (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
+  -- mapM (\i -> mapM (\j -> boundaries n False n True (sides1 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
+  -- mapM (\i -> mapM (\j -> boundaries m True m False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
+  -- mapM (\i -> mapM (\j -> boundaries n True m True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
 
   trace "DOMAINS AFTER SIDE CONSTRAINTS"
   lookupDom back >>= trace . show
-  mapM (\s -> lookupDom s >>= trace . show) sides0
-  mapM (\s -> lookupDom s >>= trace . show) sides1
+  mapM (\s -> lookupDom s >>= \d -> trace $ (dimAsString !! s) ++ "0: " ++ show d) sides0
+  mapM (\s -> lookupDom s >>= \d -> trace $ (dimAsString !! (s - dim c)) ++ "1: " ++ show d) sides1
 
 
   isAll <- gets allSol

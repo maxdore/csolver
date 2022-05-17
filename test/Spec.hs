@@ -10,7 +10,7 @@ import Core
 import Examples
 
 
-checkSolver :: [Decl] -> Cube -> Result -> IO ()
+checkSolver :: Tele -> Cube -> Result -> IO ()
 checkSolver ctxt goal t = do
   res <- runExceptT $ runStateT solve (SEnv ctxt goal 0 Map.empty False False)
   case res of
@@ -20,9 +20,22 @@ checkSolver ctxt goal t = do
       -- TODO WHY IS show COMPARISON NECESSARY????
       putStrLn $ if (show r == show t) then "OK" else "FAIL! GOAL\n" ++ show goal ++ "\n" ++ show r ++ "\nIS PRESENTED, BUT SHOULD BE\n" ++ show t
 
+checkInfer :: Tele -> Term -> Cube -> IO ()
+checkInfer ctxt t phi = do
+  res <- runExceptT $ runStateT (infer t) (mkSEnv ctxt Point False)
+  case res of
+    Left err -> do
+      putStrLn $ "FAIL!" ++ err
+    Right (psi , _)-> do
+      -- TODO WHY IS show COMPARISON NECESSARY????
+      putStrLn $ if (phi == psi) then "OK" else "FAIL! INFER\n" ++ show t ++ " \n" ++ show phi ++ "\nIS PRESENTED, BUT SHOULD BE\n" ++ show psi
 
 main :: IO ()
 main = do
+  checkInfer sset2ExtCtxt
+    (Abs (Abs (Abs (App (Face "f") [[1,2],[1,3]]))))
+    (Path (Path (Path Point (Face "x") (App (Face "f") [[1],[2]])) (Abs (App (Face "f") [[1,2]])) (Face "f")) (Abs (Abs (App (Face "f") [[1,2]]))) (Abs (Face "f")))
+  
   checkSolver intCtxt
     (Path (Path Point (Face "zero") (Face "one")) (Face "seg") (Face "seg"))
     (Dir (Abs (Abs (App (Face "seg") [[1]]))))

@@ -84,6 +84,14 @@ instance Ord Term where
 --         "|/             |/" ++
 --         "*--------------*"
 
+
+-- toInd :: Endpoint -> Int
+-- toInd False = 0
+-- toInd True = 1
+
+dimAsString = ["i","j","k","l","m","n"]
+
+
 dim :: Cube -> Int
 dim Point = 0
 dim (Path c u v) = dim c + 1

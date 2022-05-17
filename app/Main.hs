@@ -7,6 +7,7 @@ import qualified Data.ByteString.Lazy.Char8 as ByteC
 import Control.Monad.Except
 import Control.Monad.State
 import System.Environment
+import qualified Data.Map as Map
 
 import Data
 import Core
@@ -69,21 +70,20 @@ runTest ctxt t i e = do
           putStrLn $ show ty
   return res
 
-main = return ()
+main :: IO ()
+main = do
+  args <- getArgs
+  let file = args !! 0
+  let verbose = "--verbose" `elem` args
+  let all = "--all" `elem` args
 
--- main :: IO ()
--- main = do
---   args <- getArgs
---   let file = args !! 0
+  goals <- readGoals file
 
---   goals <- readGoals file
-
---   mapM (\g -> do
---            ctxt <- buildContext file g
---            s <- runSolve $ mkSEnv ctxt g False
---            case s of
---              Left err -> undefined
---              Right (rs , _) -> ByteC.putStrLn $ agdaResult (rs !! 0)
---            ) goals
-
---   print "Success"
+  mapM (\g -> do
+           ctxt <- buildContext file g
+           s <- runExceptT $ runStateT solve $ SEnv ctxt g 0 Map.empty verbose all
+           case s of
+             Left err -> undefined
+             Right (rs , _) -> ByteC.putStrLn $ agdaResult (rs !! 0)
+           ) goals
+  return ()

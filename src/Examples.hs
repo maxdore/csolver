@@ -137,6 +137,7 @@ lowerT = mkSEnv ssetCtxt (Path (Path Point (App (Face "f") [[1]]) (App (Face "h"
 
 
 
+
 sset2Ctxt :: Tele
 sset2Ctxt = [
     ("x" ,     Point)
@@ -149,6 +150,69 @@ sset2Ctxt = [
            ]
 
 upperT = mkSEnv sset2Ctxt (Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
+
+
+slideEq = mkSEnv sset2Ctxt (Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
+
+
+
+
+sset2ExtCtxt :: Tele
+sset2ExtCtxt = [
+    ("x" ,     Point)
+  , ("y" ,     Point)
+  , ("z" ,     Point)
+  , ("f" ,      Path Point (Face "x") (Face "y"))
+  , ("g" ,      Path Point (Face "y") (Face "z"))
+  , ("h" ,      Path Point (Face "x") (Face "z"))
+  , ("phi" , (Path (Path Point (App (Face "f") [[1]]) (App (Face "h") [[1]])) (Abs (Face "x")) (Face "g")))
+  , ("upper" , (Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z"))))
+           ]
+
+
+j0 = mkSEnv sset2ExtCtxt $ Path (Path (Path Point
+                                       (Face "x") (App (App (Face "phi") [[2]]) [[1]]))
+                                       (Abs (App (Face "f") [[1,2]])) (Abs (App (Face "h") [[1,2]])))
+                                       (Abs (Abs (Face "x"))) (Abs (Abs (App (App (Face "phi") [[1]]) [[2]])))
+
+  -- testj0 : PathP (λ i → PathP (λ j → Path Δ∣ X ∣
+  --     (vert x) (ltriangle ϕ i j))
+  --     (λ j → edge f (i ∧ j)) λ j → edge h (i ∧ j)) (λ _ _ → vert x) λ i j → ltriangle ϕ j i
+
+k0 = mkSEnv sset2ExtCtxt $ Path (Path (Path Point
+                                       (Face "x") (App (App (Face "phi") [[1]]) [[2]]))
+                                       (Abs (Face "x")) (Abs (App (App (Face "phi") [[1]]) [[2]])))
+                                       (Abs (Abs (App (Face "f") [[1,2]]))) (Abs (Abs (App (Face "h") [[1,2]])))
+
+i1 = mkSEnv sset2ExtCtxt $ Path (Path (Path Point
+                                       (Face "x") (App (App (Face "upper") [[2]]) [[1]]))
+                                       (Abs (App (Face "h") [[1,2]])) (Abs (App (App (Face "phi") [[1]]) [[2]])))
+                                       (Abs (Abs (App (Face "f") [[1,2]]))) (Abs (Abs (App (Face "h") [[1]])))
+      -- (vert x) (upperTriangle ϕ i j))
+      -- (λ j → edge h (i ∧ j)) λ j → ltriangle ϕ j i)
+      -- (λ i j → edge f (i ∧ j)) λ i j → edge h j
+
+
+
+sndi0 = mkSEnv sset2ExtCtxt $ Path (Path (Path Point
+                                       (App (Face "f") [[1,2]]) (App (Face "h") [[2]]))
+                                       (Abs (App (Face "h") [[1,2]])) (Abs (App (App (Face "phi") [[2]]) [[1]])))
+                                       (Abs (Abs (Face "x"))) (Abs (Abs (App (App (Face "upper") [[1]]) [[2]])))
+    -- testi0 : PathP (λ i → PathP (λ j → Path Δ∣ X ∣
+      -- (edge f (i ∧ j)) (edge h i))
+      -- (λ j → edge h (i ∧ j)) λ j → ltriangle ϕ i j)
+      -- (λ i j → vert x) λ i j → upperTriangle ϕ j i
+
+  
+  
+cube = mkSEnv sset2ExtCtxt $ Path (Path (Path Point
+                                       (App (App (Face "phi") [[1]]) [[2]]) (App (App (Face "upper") [[1]]) [[2]]))
+                                       (Abs (App (Face "f") [[1,2]])) (Abs (App (Face "g") [[1],[2]])))
+                                       (Face "phi") (Face "upper")
+
+
+
+
 
 
 
