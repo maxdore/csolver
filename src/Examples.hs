@@ -150,6 +150,7 @@ sset2Ctxt = [
            ]
 
 upperT = mkSEnv sset2Ctxt (Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
+upperT2 = mkSEnv sset2Ctxt (Path (Path Point (App (Face "f") [[1]]) (Face "z")) (Face "h") (Face "g"))
 
 
 slideEq = mkSEnv sset2Ctxt (Path (Path Point (App (Face "h") [[1]]) (App (Face "g") [[1]])) (Face "f") (Abs (Face "z")))
@@ -203,8 +204,16 @@ sndi0 = mkSEnv sset2ExtCtxt $ Path (Path (Path Point
       -- (λ j → edge h (i ∧ j)) λ j → ltriangle ϕ i j)
       -- (λ i j → vert x) λ i j → upperTriangle ϕ j i
 
-  
-  
+
+thirdi0 = mkSEnv sset2ExtCtxt $ Path (Path (Path Point
+                                       (App (Face "f") [[1,2]]) (App (Face "h") [[1]]))
+                                       (Abs (Face "x")) (Abs (App (App (Face "upper") [[1]]) [[2]])))
+                                       (Abs (Abs (App (Face "h") [[1,2]]))) (Abs (App (App (Face "phi") [[2]]) [[1]]))
+      -- (edge f (i ∧ j)) (edge h j))
+      -- (λ j → vert x) λ j → upperTriangle ϕ j i)
+      -- (λ i j → edge h (i ∧ j)) (ltriangle ϕ)
+
+
 cube = mkSEnv sset2ExtCtxt $ Path (Path (Path Point
                                        (App (App (Face "phi") [[1]]) [[2]]) (App (App (Face "upper") [[1]]) [[2]]))
                                        (Abs (App (Face "f") [[1,2]])) (Abs (App (Face "g") [[1],[2]])))

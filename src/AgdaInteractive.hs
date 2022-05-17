@@ -8,6 +8,7 @@ import qualified Data.ByteString.Lazy.Search as ByteS
 
 import Data.String
 import Data.List
+import Data.Ord
 import qualified Data.Text.Lazy             as TL
 import qualified Data.Text.Lazy.Encoding    as TL
 import qualified Data.Text.Lazy.IO          as TL
@@ -59,16 +60,19 @@ searchLemmas :: String -> Id -> IO [Decl]
 searchLemmas file name = do
   let cmd = "IOTCM \"" ++ file ++ "\" NonInteractive Indirect (Cmd_search_about_toplevel Simplified \"" ++ name ++ "\")"
   (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction"
-  print out
 
-  let lemmasInd = ByteS.indices ("\\n  ") out
-  let lemmasName = map (\i -> ByteS.split "\"" (Byte.drop (i + 8) out) !! 0) lemmasInd
-  let lemmasRaw = map (\k -> ByteS.split "\"" (Byte.drop ((lemmasInd !! k) + (Byte.length (lemmasName !! k)) + 18) out) !! 0) [0 .. (length lemmasInd)-1]
+  let relevant = (ByteS.split "Definitions about" out) !! 1
+  print relevant
+
+  let lemmasInd = ByteS.indices ("\\n  ") relevant
+  let lemmasName = map (\i -> ByteS.split " : " (Byte.drop (i + 4) relevant) !! 0) lemmasInd
+  let lemmasRaw = map (\k -> ByteS.split "\\n  " (Byte.drop ((lemmasInd !! k) + (Byte.length (lemmasName !! k)) + 7) relevant) !! 0) [0 .. (length lemmasInd)-1]
 
   let lemmas = (map  (parseCube . TL.unpack . TL.decodeUtf8) lemmasRaw)
+  print lemmasName
   print lemmasRaw
   print lemmas
-  let decls = (zipWith (,) lemmasName lemmas)
+  let decls = (zipWith (,) (map (\n -> (ByteS.split " " n) !! 0) lemmasName) lemmas)
   -- case lemmas of
   --   Right ls -> return (zipWith (,) lemmasName ls)
   return $ filter (\(n,c) -> n /= "UNDEFINED") $ map (\(n,ty) -> case ty of
@@ -81,11 +85,13 @@ searchLemmas file name = do
 
 buildContext :: String -> Cube -> IO Tele
 buildContext file goal = do
-  decls <- mapM (\t -> inferType file t >>= (\ty -> return (t,ty))) (getCFaces goal)
+  gdecls <- mapM (\t -> inferType file t >>= (\ty -> return (t,ty))) (getCFaces goal)
+  rdecls <- mapM (\t -> inferType file t >>= (\ty -> return (t,ty))) (nub (concat (map (\(n,c) -> getCFaces c) gdecls)))
+  let decls = nub $ gdecls ++ rdecls
+
   lemmasAll <- mapM (\t -> searchLemmas file t) (getCFaces goal)
   let lemmas = filter (\(n,t) -> t /= goal) $ nub $ concat lemmasAll
-  return $ decls ++ lemmas
-
+  return $ sortBy (comparing snd) $ nub $ decls ++ lemmas
 
 
 dimNames = ["i","j","k","l","m","n"]
@@ -93,11 +99,11 @@ dimNames = ["i","j","k","l","m","n"]
 
 agdaDim :: Dim -> Int -> Int -> Byte.ByteString
 agdaDim (c:[]) d s = agdaClause c d s
-agdaDim (c:c':cs) d s = "(" <> (agdaClause c d s) <> ") OR " <> agdaDim (c' : cs) d s
+agdaDim (c:c':cs) d s = (agdaClause c d s) <> " \226\136\168 " <> agdaDim (c' : cs) d s
 
 agdaClause :: [Int] -> Int -> Int -> Byte.ByteString
 agdaClause (i:[]) d s = dimNames !! (if d-i == s then (d-i + 1) else (d-i))
-agdaClause (i:j:is) d s = (dimNames !! (d-i)) <> " AND " <> agdaClause (j:is) d s
+agdaClause (i:j:is) d s = (dimNames !! (if d-i == s then (d-i + 1) else (d-i))) <> " \226\136\167 " <> agdaClause (j:is) d s
 
 -- agdaTerm :: Term -> Byte.ByteString
 -- agdaTerm t = agdaTerm' t 0
@@ -114,25 +120,14 @@ agdaResult :: Result -> Byte.ByteString
 agdaResult (Dir t) = let (n , t') = unpeelAbs t in agdaAbs n <> agdaTerm t' n 0
 agdaResult (Comp b sides) = let
    (n , b') = unpeelAbs b
-   sides' = zip (map (\(zero,one) -> ((snd . unpeelAbs) zero , (snd . unpeelAbs) one)) sides) dimNames
+   sides' = zip (zip (map (\(zero,one) -> ((snd . unpeelAbs) zero , (snd . unpeelAbs) one)) sides) dimNames) [1..n]
    in
     agdaAbs n <> "hcomp (\206\187 " <> (dimNames !! n) <> " \226\134\146 \206\187 {\n"
-              <> Byte.concat (map (\((zero,one),dim) ->
-                                     " ; (" <> dim <> " = i0) \226\134\146 " <> agdaTerm zero n dim <> "\n" <>
-                                     " ; (" <> dim <> " = i1) \226\134\146 " <> agdaTerm one n dim <> "\n"
+              <> Byte.concat (map (\(((zero,one),dim),i) ->
+                                      " ; (" <> dim <> " = i0) \226\134\146 " <> agdaTerm zero n i <> "\n" <>
+                                     " ; (" <> dim <> " = i1) \226\134\146 " <> agdaTerm one n i <> "\n"
                                   ) sides')
-              <> "}) (" <> agdaTerm b' n <> ")"
-
-    -- agdaAbs n <> "hcomp (\206\187 j \226\134\146 \206\187 {\n\
-    --             \ ; (i = i0) \226\134\146 " <> agdaTerm b' (n + 1) <> " \n\
-    --             \ ; (i = i1) \226\134\146 " <> agdaTerm b' (n + 1) <> " \
-    --             \ })\n (" <> agdaTerm b' (n + 1) <> ")"
-  
--- agdaResult (Comp t [(u,v)]) = let
---    (n , t') = unpeelAbs t
---    (_ , u') = unpeelAbs u
---    (_ , v') = unpeelAbs v in
---      agdaAbs n <> "hcomp (\206\187 j \226\134\146 \206\187 {\n (i = i0) \226\134\146 " <> agdaTerm u' (n + 1) <> ";\n (i = i1) \226\134\146 " <> agdaTerm v' (n + 1) <> "})\n\ \ \ \ (" <> agdaTerm t' (n + 1) <> ")"
+              <> "}) (" <> agdaTerm b' n 0 <> ")"
 
 agdaAbs :: Int -> Byte.ByteString
 agdaAbs n = "\206\187" <> ((Byte.concat (map (\i -> " " <> (dimNames !! (i-1))) [1 .. n]))) <> " \226\134\146 "

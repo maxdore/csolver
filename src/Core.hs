@@ -265,27 +265,31 @@ oneSolution = mapM label where
     label :: Int -> Solving s Term
     label var = do
         vals <- lookupDom var
-        trace $ show var ++ " : " ++ show vals
+        let val = (Set.toList vals) !! 0
+        var `hasValue` val
+        return val
+
+        -- trace $ show var ++ " : " ++ show vals
 
         -- let ind = if (length (Set.toList vals) > 1) then 1 else 0
         -- let val = (Set.toList vals) !! ind
         -- var `hasValue` val
         -- return val
   
-        sndSol <- gets allSol
-        if sndSol && length (Set.toList vals) > 1
-          then do
-                trace "GETTING SECONDS"
-                -- s <- get
-                -- put $ s { allSol = False }
-                let val = (Set.toList vals) !! 1
-                var `hasValue` val
-                return val
-          else do
-                trace "GETTING FIRSTS"
-                let val = (Set.toList vals) !! 0
-                var `hasValue` val
-                return val
+        -- sndSol <- gets allSol
+        -- if sndSol && length (Set.toList vals) > 1
+        --   then do
+        --         trace "GETTING SECONDS"
+        --         -- s <- get
+        --         -- put $ s { allSol = False }
+        --         let val = (Set.toList vals) !! 1
+        --         var `hasValue` val
+        --         return val
+        --   else do
+        --         trace "GETTING FIRSTS"
+        --         let val = (Set.toList vals) !! 0
+        --         var `hasValue` val
+        --         return val
 
         -- val <- Solving . lift $ Set.toList vals
 

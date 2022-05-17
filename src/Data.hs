@@ -96,6 +96,10 @@ dim :: Cube -> Int
 dim Point = 0
 dim (Path c u v) = dim c + 1
 
+instance Ord Cube where
+  c <= d = dim c <= dim d
+
+
 depth :: Term -> Int
 depth (Face name) = 0
 depth (Abs t) = 1 + depth t
