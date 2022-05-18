@@ -85,6 +85,10 @@ main = do
     (Path Point (Face "one") (Face "zero"))
     (Comp (Abs (Face "zero")) [(Abs (App (Face "seg") [[1]]),Abs (Face "zero"))])
 
+  checkSolver twoCtxt
+    (Path Point (Face "x") (Face "z"))
+    (Comp (Abs (App (Face "p") [[1]])) [(Abs (Face "x"),Abs (App (Face "q") [[1]]))])
+
   checkSolver compCtxt
     (Path Point (Face "w") (Face "z"))
     (Comp (Abs (App (Face "q") [[1]])) [(Abs (App (Face "p") [[1]]),Abs (App (Face "r") [[1]]))])

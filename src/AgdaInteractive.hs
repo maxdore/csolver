@@ -91,43 +91,37 @@ buildContext file goal = do
 
   lemmasAll <- mapM (\t -> searchLemmas file t) (getCFaces goal)
   let lemmas = filter (\(n,t) -> t /= goal) $ nub $ concat lemmasAll
-  return $ sortBy (comparing snd) $ nub $ decls ++ lemmas
+  return $ sortBy (comparing (dim . snd) <> comparing fst) $ nub $ decls ++ lemmas
 
 
 dimNames = ["i","j","k","l","m","n"]
 
 
-agdaDim :: Dim -> Int -> Int -> Byte.ByteString
-agdaDim (c:[]) d s = agdaClause c d s
-agdaDim (c:c':cs) d s = (agdaClause c d s) <> " \226\136\168 " <> agdaDim (c' : cs) d s
+-- agdaDim :: Dim -> Int -> Int -> Byte.ByteString
+agdaDim (c:[]) ds  = agdaClause c ds
+agdaDim (c:c':cs) ds = (agdaClause c ds) <> " \226\136\168 " <> agdaDim (c' : cs) ds
 
-agdaClause :: [Int] -> Int -> Int -> Byte.ByteString
-agdaClause (i:[]) d s = dimNames !! (if d-i == s then (d-i + 1) else (d-i))
-agdaClause (i:j:is) d s = (dimNames !! (if d-i == s then (d-i + 1) else (d-i))) <> " \226\136\167 " <> agdaClause (j:is) d s
+-- agdaClause :: [Int] -> Int -> Int -> Byte.ByteString
+agdaClause (i:[]) ds = ds !! i
+agdaClause (i:j:is) ds = (ds !! i) <> " \226\136\167 " <> agdaClause (j:is) ds
 
--- agdaTerm :: Term -> Byte.ByteString
--- agdaTerm t = agdaTerm' t 0
---   where
---   agdaTerm' (Face name) d = fromString name
---   agdaTerm' (Abs t) d = "\206\187 " <> (dimNames !! d) <> " \226\134\146 " <> agdaTerm' t (d + 1)
---   agdaTerm' (App t r) d = agdaTerm' t d <> " (" <> agdaDim r d <> ")"
+agdaTerm (Face name) ds = fromString name
+agdaTerm (App t r) ds = agdaTerm t ds <> " (" <> agdaDim r ds <> ")"
 
-agdaTerm (Face name) d s = fromString name
-agdaTerm (App t r) d s = agdaTerm t d s <> " (" <> agdaDim r d s <> ")"
-
+slice start end = take (end - start + 1) . drop start
 
 agdaResult :: Result -> Byte.ByteString
-agdaResult (Dir t) = let (n , t') = unpeelAbs t in agdaAbs n <> agdaTerm t' n 0
+agdaResult (Dir t) = let (n , t') = unpeelAbs t in agdaAbs n <> agdaTerm t' (drop n dimNames)
 agdaResult (Comp b sides) = let
    (n , b') = unpeelAbs b
    sides' = zip (zip (map (\(zero,one) -> ((snd . unpeelAbs) zero , (snd . unpeelAbs) one)) sides) dimNames) [1..n]
    in
     agdaAbs n <> "hcomp (\206\187 " <> (dimNames !! n) <> " \226\134\146 \206\187 {\n"
               <> Byte.concat (map (\(((zero,one),dim),i) ->
-                                      " ; (" <> dim <> " = i0) \226\134\146 " <> agdaTerm zero n i <> "\n" <>
-                                     " ; (" <> dim <> " = i1) \226\134\146 " <> agdaTerm one n i <> "\n"
+                                      (if i > 1 then " ; (" else "   (") <> dim <> " = i0) \226\134\146 " <> agdaTerm zero ("" : dimNames !! n : (take (i-1) dimNames) ++ drop (i) dimNames) <> "\n" <> 
+                                     " ; (" <> dim <> " = i1) \226\134\146 " <> agdaTerm one ("" : dimNames !! n : (take (i-1) dimNames) ++ drop (i) dimNames) <> "\n"
                                   ) sides')
-              <> "}) (" <> agdaTerm b' n 0 <> ")"
+              <> "}) (" <> agdaTerm b' (dimNames) <> ")"
 
 agdaAbs :: Int -> Byte.ByteString
 agdaAbs n = "\206\187" <> ((Byte.concat (map (\i -> " " <> (dimNames !! (i-1))) [1 .. n]))) <> " \226\134\146 "

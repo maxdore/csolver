@@ -398,11 +398,12 @@ solve = do
       trace "FOUND DIRECT SOLUTIONS"
       trace $ show res
       isAll <- gets allSol
-      if isAll
+      if isAll 
         then return $ map Dir res
         else return $ [Dir (res !! 0)]
     else do
       trace "NO DIRECT FIT FOUND, SEARCHING FOR HIGHER CUBES"
       hres <- comp goal shapes
+      trace $ show hres
       return hres
 

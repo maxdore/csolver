@@ -40,6 +40,20 @@ trivGoal = mkSEnv intCtxt (Path Point (Face "zero") (Face "one"))
 invGoal = mkSEnv intCtxt (Path Point (Face "one") (Face "zero"))
 
 
+
+twoCtxt :: Tele
+twoCtxt = [
+    ("x" ,     Point)
+  , ("y" ,      Point)
+  , ("z" ,      Point)
+  , ("p" ,      Path Point (Face "x") (Face "y"))
+  , ("q" ,      Path Point (Face "y") (Face "z"))
+           ]
+
+twocomp = mkSEnv twoCtxt (Path Point (Face "x") (Face "z"))
+sqcomp = mkSEnv twoCtxt (Path (Path Point (App (Face "p") [[1]]) (App (Face "q") [[1]])) (Face "p") (Face "q"))
+
+
 sqCtxt :: Tele
 sqCtxt = [
     ("a" ,     Point)
