@@ -81,8 +81,8 @@ main = do
 
   mapM (\g -> do
            ctxt <- buildContext file g
-           print goals
-           print ctxt
+           -- print goals
+           -- print ctxt
            s <- runExceptT $ runStateT solve $ SEnv ctxt g 0 Map.empty verbose all
            case s of
              Left err -> print err

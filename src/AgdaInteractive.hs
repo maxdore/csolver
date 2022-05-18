@@ -22,7 +22,7 @@ import PathParser
 -- parseEmacs :: String -> Byte.ByteString -> Byte.ByteString -> IO [String]
 parseEmacs cmd pre post = do
   (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction"
-  print out
+  -- print out
 
   let goalInd = ByteS.indices pre out
   let goalsRaw = map (\i -> ByteS.split post (Byte.drop (i + (Byte.length (Byte.fromStrict pre))) out) !! 0) goalInd
@@ -34,7 +34,7 @@ readGoals :: String -> IO [Cube]
 readGoals file = do
   goalsRaw <- parseEmacs ("IOTCM \"" ++ file ++ "\" None Indirect (Cmd_load \"" ++ file ++ "\" [])") "\"?0 : " "\\n"
   let goals = sequence (map parseCube goalsRaw)
-  print goals
+  -- print goals
   case goals of
     Right gs -> return gs
     -- Left parserr -> print "Could not parse goals in file" >> return [Point]
@@ -44,7 +44,7 @@ inferType :: String -> Id -> IO Cube
 inferType file name = do
   typesRaw <- parseEmacs ("IOTCM \"" ++ file ++ "\" None Indirect (Cmd_infer_toplevel Simplified \"" ++ name ++ "\")") "*Inferred Type*\" \"" "\" nil"
   let ty = parseCube (typesRaw !! 0)
-  print ty
+  -- print ty
   case ty of
     Right t -> return t
 
@@ -62,16 +62,16 @@ searchLemmas file name = do
   (out, err) <- readProcess_ $ setStdin (fromString cmd) "agda --interaction"
 
   let relevant = (ByteS.split "Definitions about" out) !! 1
-  print relevant
+  -- print relevant
 
   let lemmasInd = ByteS.indices ("\\n  ") relevant
   let lemmasName = map (\i -> ByteS.split " : " (Byte.drop (i + 4) relevant) !! 0) lemmasInd
   let lemmasRaw = map (\k -> ByteS.split "\\n  " (Byte.drop ((lemmasInd !! k) + (Byte.length (lemmasName !! k)) + 7) relevant) !! 0) [0 .. (length lemmasInd)-1]
 
   let lemmas = (map  (parseCube . TL.unpack . TL.decodeUtf8) lemmasRaw)
-  print lemmasName
-  print lemmasRaw
-  print lemmas
+  -- print lemmasName
+  -- print lemmasRaw
+  -- print lemmas
   let decls = (zipWith (,) (map (\n -> (ByteS.split " " n) !! 0) lemmasName) lemmas)
   -- case lemmas of
   --   Right ls -> return (zipWith (,) lemmasName ls)
