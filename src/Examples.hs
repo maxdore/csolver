@@ -274,6 +274,27 @@ compCtxt = [
 compGoal = mkSEnv compCtxt (Path Point (Face "w") (Face "z"))
 
 
+
+
+
+
+
+
+loopspace2 :: Tele
+loopspace2 = [
+    ("a" , Point)
+  , ("alpha" , Path (Path Point (Face "a") (Face "a")) (Abs (Face "a")) (Abs (Face "a")))
+  -- , ("beta" , Path (Path Point (Face "a") (Face "a")) (Abs (Face "a")) (Abs (Face "a")))
+             ]
+
+
+aabb = mkSEnv loopspace2 (Path (Path (Path Point (Face "a") (Face "a")) (App (Face "alpha") [[1]]) (App (Face "alpha") [[1]])) (Face "alpha") (Face "alpha"))
+
+
+aabbeasy = mkSEnv loopspace2 (Path (Path (Path Point (Face "a") (Face "a")) (App (Face "alpha") [[1]]) (App (Face "alpha") [[1]])) (Abs (Abs (Face "a"))) (Abs (Abs (Face "a"))))
+
+
+
 -- Goal: A
 -- ———— Boundary ——————————————————————————————————————————————
 -- i = i0 ⊢ w

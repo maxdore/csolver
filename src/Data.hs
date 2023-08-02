@@ -14,7 +14,7 @@ type Var = Int
 type Dim = [[Var]]
 
 data Term = Face Id | Abs Term | App Term Dim
-  deriving (Eq)
+  deriving (Eq, Show)
 
 data Cube = Path Cube Term Term | Point
   deriving (Eq , Show)
@@ -40,10 +40,10 @@ data Result = Dir Term | Comp Term [(Term,Term)]
 -- instance Show Dim where
 --   show [] = ""
 
-instance Show Term where
-  show (Face name) = name
-  show (Abs u) = "\\" ++ show (depth u + 1) ++ "." ++ show u
-  show (App u i) = "(" ++ show u ++ "<" ++ show i ++ ">)"
+-- instance Show Term where
+--   show (Face name) = name
+--   show (Abs u) = "\\" ++ show (depth u + 1) ++ "." ++ show u
+--   show (App u i) = "(" ++ show u ++ "<" ++ show i ++ ">)"
 
 
 instance Ord Term where
@@ -85,9 +85,9 @@ instance Ord Term where
 --         "*--------------*"
 
 
--- toInd :: Endpoint -> Int
--- toInd False = 0
--- toInd True = 1
+toInd :: Endpoint -> Int
+toInd False = 0
+toInd True = 1
 
 dimAsString = ["i","j","k","l","m","n"]
 

@@ -317,10 +317,10 @@ comp c shapes = do
   trace $ show c
   sides0 <- mapM (\i -> do
                      cb <- getBoundaryC c i False 0
-                     -- trace $ show i ++ " with boundary " ++ show cb
+                     trace $ show i ++ " with boundary " ++ show cb
                      (filterM (\ s -> do
                                      sb <- getBoundary s (dim c) True
-                                     -- trace $ show s ++ " has bound " ++ show sb ++ ": " ++ show (sb == cb)
+                                     trace $ show s ++ " has bound " ++ show sb ++ ": " ++ show (sb == cb)
                                      return $ sb == cb
                                      ) shapes) >>= newVar) dims
   sides1 <- mapM (\i -> do
@@ -343,14 +343,32 @@ comp c shapes = do
   mapM (\s -> lookupDom s >>= \d -> trace $ (dimAsString !! s) ++ "0: " ++ show d) sides0
   mapM (\s -> lookupDom s >>= \d -> trace $ (dimAsString !! (s - dim c)) ++ "1: " ++ show d) sides1
 
-  mapM (\e -> mapM (\e' -> mapM (\i -> mapM (\j ->
-       boundaries (if e then j else i) e' (if e' then i else j) e ((if e then sides1 else sides0) !! (i-1)) ((if e' then sides1 else sides0) !! (j-1)))
-                                  [i + 1 .. dim c]) dims) [False , True]) [False , True]
+  -- mapM (\e -> mapM (\e' -> mapM (\i -> mapM (\j ->
+  --      boundaries (i + toInd e) e' (j - toInd e') e ((if e then sides1 else sides0) !! (i-1)) ((if e' then sides1 else sides0) !! (j-1)))
+  --                                 [i + 1 .. dim c]) dims) [False , True]) [False , True]
 
-  -- mapM (\i -> mapM (\j -> boundaries m False n False (sides0 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  -- mapM (\i -> mapM (\j -> boundaries n False n True (sides1 !! (i-1)) (sides0 !! (j-1))) [i + 1 .. dim c]) dims
-  -- mapM (\i -> mapM (\j -> boundaries m True m False (sides0 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
-  -- mapM (\i -> mapM (\j -> boundaries n True m True (sides1 !! (i-1)) (sides1 !! (j-1))) [i + 1 .. dim c]) dims
+  let k = 1
+  let l = 2
+  boundaries k False l False (sides0 !! (1-1)) (sides0 !! (2-1))
+  boundaries l False l True (sides1 !! (1-1)) (sides0 !! (2-1))
+  boundaries k True k False (sides0 !! (1-1)) (sides1 !! (2-1))
+  boundaries l True k True (sides1 !! (1-1)) (sides1 !! (2-1))
+
+  let m = 2
+  let n = 3
+  boundaries m False n False (sides0 !! (1-1)) (sides0 !! (3-1))
+  boundaries n False n True (sides1 !! (1-1)) (sides0 !! (3-1))
+  boundaries m True m False (sides0 !! (1-1)) (sides1 !! (3-1))
+  boundaries n True m True (sides1 !! (1-1)) (sides1 !! (3-1))
+
+
+  let p = 1
+  let q = 3
+  boundaries p False q False (sides0 !! (2-1)) (sides0 !! (3-1))
+  boundaries q False q True (sides1 !! (2-1)) (sides0 !! (3-1))
+  boundaries p True p False (sides0 !! (2-1)) (sides1 !! (3-1))
+  boundaries q True p True (sides1 !! (2-1)) (sides1 !! (3-1))
+
 
   trace "DOMAINS AFTER SIDE CONSTRAINTS"
   lookupDom back >>= trace . show

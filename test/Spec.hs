@@ -35,7 +35,11 @@ main = do
   checkInfer sset2ExtCtxt
     (Abs (Abs (Abs (App (Face "f") [[1,2],[1,3]]))))
     (Path (Path (Path Point (Face "x") (App (Face "f") [[1],[2]])) (Abs (App (Face "f") [[1,2]])) (Face "f")) (Abs (Abs (App (Face "f") [[1,2]]))) (Abs (Face "f")))
-  
+
+  -- TODO
+  checkInfer sset2Ctxt (Abs (Abs ((App (Face "phi")[[1,2]]))))
+    (Path (Path (Path Point (App (Face "f") [[1,2]]) (App (Face "h") [[1,2]])) (Abs (Face "x")) (App (Face "phi") [[1]])) (Abs (Abs (Face "x"))) (Face "phi"))
+
   checkSolver intCtxt
     (Path (Path Point (Face "zero") (Face "one")) (Face "seg") (Face "seg"))
     (Dir (Abs (Abs (App (Face "seg") [[1]]))))
